@@ -260,7 +260,7 @@ class Worker(threading.Thread):
 class Window(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f'Nuke Batch Packager {VERSION} · 批量打包')
+        self.title(f'Nuke Batch Packager {VERSION} · Fuck Vendor Nuke Pack. One Click, No Bullshit.')
         self.geometry('1160x880')
         self.minsize(780, 640)
         self.paths = []
@@ -273,7 +273,6 @@ class Window(TkinterDnD.Tk):
         self.closing = False
         self.poll_id = None
         self.output = tk.StringVar(self)
-        self.count = tk.StringVar(self, value='已添加 0 个工程 · 已扫描 0 个')
         self.progress_text = tk.StringVar(self, value='就绪')
         self.total_text = tk.StringVar(self, value='整体进度：尚未开始')
         self._build_widgets()
@@ -287,21 +286,23 @@ class Window(TkinterDnD.Tk):
         style = ttk.Style(self)
         if 'vista' in style.theme_names():
             style.theme_use('vista')
-        style.configure('Tagline.TLabel', font=('Segoe UI', 11, 'bold'))
         style.configure('TButton', padding=(10, 6))
         style.configure('Tool.TButton', padding=0, anchor='center')
         style.configure('Treeview', rowheight=27)
+        scale = float(self.tk.call('tk', 'scaling')) / (96 / 72)
+        button_size, icon_size = round(32 * scale), round(20 * scale)
         root = ttk.Frame(self, padding=16)
         root.pack(fill='both', expand=True)
-        ttk.Label(root, text='Fuck Vendor Nuke Pack. One Click, No Bullshit.',
-                  style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(0, 16))
         output_row = ttk.Frame(root)
         output_row.pack(fill='x')
-        ttk.Label(output_row, text='输出目录').pack(side='left', padx=(0, 8))
+        output_row.rowconfigure(0, minsize=button_size)
+        output_row.columnconfigure(1, weight=1)
+        output_row.columnconfigure(2, minsize=button_size + 8)
+        ttk.Label(output_row, text='输出目录', anchor='w').grid(row=0, column=0, sticky='nsw', padx=(0, 8))
         self.output_entry = ttk.Entry(output_row, textvariable=self.output)
-        self.output_entry.pack(side='left', fill='x', expand=True)
-        self.choose = ttk.Button(output_row, text='...', width=3, command=self.choose_output)
-        self.choose.pack(side='left', padx=(8, 0))
+        self.output_entry.grid(row=0, column=1, sticky='nsew')
+        self.choose = ttk.Button(output_row, text='...', width=0, style='Tool.TButton', command=self.choose_output)
+        self.choose.grid(row=0, column=2, sticky='nsew', padx=(8, 0))
         for widget in (output_row, self.output_entry, self.choose):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind('<<Drop>>', self.on_output_drop)
@@ -310,8 +311,6 @@ class Window(TkinterDnD.Tk):
         self.controls = []
         self.tooltips = []
         self.toolbar_images = []
-        scale = float(self.tk.call('tk', 'scaling')) / (96 / 72)
-        button_size, icon_size = round(32 * scale), round(20 * scale)
 
         def tool_button(icon, command, side='left'):
             # Pixel-sized slots keep every button square, regardless of image metrics.
@@ -352,7 +351,6 @@ class Window(TkinterDnD.Tk):
         details = ttk.Frame(self.panes, padding=(10, 0, 0, 0))
         self.panes.add(projects, weight=1)
         self.panes.add(details, weight=3)
-        ttk.Label(projects, textvariable=self.count).pack(side='bottom', anchor='w', pady=(6, 0))
         project_frame = ttk.Frame(projects)
         project_frame.pack(fill='both', expand=True)
         project_frame.rowconfigure(0, weight=1)
@@ -390,11 +388,6 @@ class Window(TkinterDnD.Tk):
         self.table.grid(row=0, column=0, sticky='nsew')
         vertical.grid(row=0, column=1, sticky='ns')
         horizontal.grid(row=1, column=0, sticky='ew')
-        status_frame = ttk.Frame(details)
-        status_frame.pack(side='bottom', fill='x', before=table_frame)
-        ttk.Label(status_frame, text='素材 / 插件状态').pack(anchor='w', pady=(8, 4))
-        self.dependencies = ScrolledText(status_frame, height=5, wrap='word', state='disabled')
-        self.dependencies.pack(fill='x')
         # Reserve the footer first, letting the split pane shrink on small windows.
         footer = ttk.Frame(root)
         footer.pack(side='bottom', fill='x', before=self.panes)
@@ -406,15 +399,23 @@ class Window(TkinterDnD.Tk):
         self.progress = CombinedProgress(footer)
         self.progress.pack(fill='x', pady=(4, 4))
         ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
-        ttk.Label(footer, text='日志').pack(anchor='w', pady=(8, 4))
-        self.log = ScrolledText(footer, height=5, wrap='word', state='disabled')
+        self.footer_panes = ttk.Panedwindow(footer, orient='horizontal')
+        self.footer_panes.pack(fill='x', pady=(8, 0))
+        log_frame = ttk.Frame(self.footer_panes, padding=(0, 0, 8, 0))
+        status_frame = ttk.Frame(self.footer_panes, padding=(8, 0, 0, 0))
+        self.footer_panes.add(log_frame, weight=1)
+        self.footer_panes.add(status_frame, weight=1)
+        ttk.Label(log_frame, text='日志').pack(anchor='w', pady=(0, 4))
+        ttk.Label(status_frame, text='素材 / 插件状态').pack(anchor='w', pady=(0, 4))
+        self.log = ScrolledText(log_frame, width=1, height=5, wrap='word', state='disabled')
+        self.dependencies = ScrolledText(status_frame, width=1, height=5, wrap='word', state='disabled')
         for view in (self.dependencies, self.log):
             view.configure(font=('Microsoft YaHei UI', 10), padx=8, pady=6,
                            spacing1=2, spacing3=4)
             for level, color in [('info', '#334155'), ('success', '#16703c'),
                                  ('warning', '#985c00'), ('error', '#b42318')]:
                 view.tag_configure(level, foreground=color)
-        self.log.pack(fill='x')
+            view.pack(fill='both', expand=True)
 
     def busy(self):
         return self.worker is not None
@@ -447,7 +448,6 @@ class Window(TkinterDnD.Tk):
                         self.project_table.insert('', 'end', iid=str(item), values=(item.name, '未扫描', '—'))
             except OSError as error:
                 self.append_log(f'添加失败 · {path.name} · {readable_error(error)}', 'error')
-        self.update_project_count()
         if self.paths and not self.project_table.selection():
             self.project_table.selection_set(str(self.paths[0]))
             self.project_table.focus(str(self.paths[0]))
@@ -458,9 +458,6 @@ class Window(TkinterDnD.Tk):
             return REFUSE_DROP
         self.add(self.tk.splitlist(event.data))
         return COPY
-
-    def update_project_count(self):
-        self.count.set(f'已添加 {len(self.paths)} 个工程 · 已扫描 {len(self.plans)} 个')
 
     def on_output_drop(self, event):
         if self.busy():
@@ -503,7 +500,6 @@ class Window(TkinterDnD.Tk):
         self.project_errors.clear()
         self.project_table.delete(*self.project_table.get_children())
         self.render_selected_project()
-        self.update_project_count()
         self.clear_log()
 
     def scan_only(self):
@@ -527,7 +523,6 @@ class Window(TkinterDnD.Tk):
         self.append_log(f'开始{action} · 共 {len(self.paths)} 个工程')
         self.plans.clear()
         self.project_errors.clear()
-        self.update_project_count()
         for path in self.paths:
             self.project_table.item(str(path), values=(path.name, '等待扫描', '—'))
         self.render_selected_project()
@@ -568,7 +563,6 @@ class Window(TkinterDnD.Tk):
 
     def show_plan(self, plan, size):
         self.plans[plan.script] = (plan, size)
-        self.update_project_count()
         self.project_table.set(str(plan.script), 'assets', len(plan.assets))
         self.set_project_state(plan.script, '需核对' if needs_review(plan) else '已扫描')
         if self.project_table.selection() == (str(plan.script),):

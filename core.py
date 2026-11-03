@@ -206,6 +206,7 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_p
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None):
     from gizmo import check_sources, finish_bundle
+    from package_readme import render_package_readme
     if plan.plugin_blockers:
         raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
     check_sources(plan, cancel)
@@ -274,7 +275,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         plugin_report = finish_bundle(plan, stage, edits, hashes, cancel)
         report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-        (stage/'打包说明.txt').write_text('有 Gizmo 时请双击 打开工程.cmd，或使用 Nuke 执行 load_package.py；不要直接双击 .nk。\n移动时请搬走整个文件夹。\n仅完成静态依赖收集与文件校验，尚不代表 Nuke 加载或渲染验证通过。\n素材待处理、缺失、缺帧及其他限制请查看 report.json。\n',encoding='utf-8')
+        (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')
         if cancel(): raise Cancelled()
         marker.unlink()
         return target
