@@ -65,7 +65,9 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertIn('就绪', self.window.table.item(rows[0], 'values'))
         self.assertIn('离线模式', self.log())
-        self.window.output.set(str(self.folder / 'delivery'))
+        delivery = self.folder / 'delivery'
+        delivery.mkdir()
+        self.window.on_output_drop(SimpleNamespace(data=self.window.tk.call('list', str(delivery))))
         self.window.pack()
         self.assertTrue(self.window.cancel.instate(['!disabled']))
         self.wait_finished()
@@ -95,6 +97,19 @@ class WindowTests(unittest.TestCase):
             self.window.choose_output()
         self.assertEqual(self.window.output.get(), str(self.folder))
 
+    def test_output_drop_accepts_one_folder_without_adding_projects(self):
+        destination = self.folder / '中文 输出目录'
+        destination.mkdir()
+        event = SimpleNamespace(data=self.window.tk.call('list', str(destination)))
+        self.assertEqual(self.window.on_output_drop(event), 'copy')
+        self.assertEqual(self.window.output.get(), str(destination.resolve()))
+        self.assertEqual(self.window.paths, [])
+        for paths in [(self.source,), (destination, self.folder), (self.folder / 'missing',), ()]:
+            with self.subTest(paths=paths):
+                event = SimpleNamespace(data=self.window.tk.call('list', *(str(path) for path in paths)))
+                self.assertEqual(self.window.on_output_drop(event), 'refuse_drop')
+                self.assertEqual(self.window.output.get(), str(destination.resolve()))
+
     def test_failure_does_not_prevent_next_project(self):
         broken = self.folder / 'broken.nk'
         broken.write_text('Read {', encoding='utf-8')
@@ -122,6 +137,8 @@ class WindowTests(unittest.TestCase):
             self.assertTrue(entered.wait(2))
             self.window.update()
             self.window.clear()
+            self.window.on_output_drop(SimpleNamespace(data=self.window.tk.call('list', str(self.folder))))
+            self.assertEqual(self.window.output.get(), '')
             self.window.add([self.folder / 'other.nk'])
             self.window.scan_only()
             self.assertEqual(self.window.paths, [self.source.resolve()])

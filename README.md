@@ -4,29 +4,32 @@
 
 ## Windows 启动
 
-1. 安装 Python 3.10 或更高版本，安装时保留 Tcl/Tk 支持。
-2. 在项目根目录执行以下命令启动：
+1. 双击 `tools/dist/NukeBatchPackager.exe`。这是单文件发布版，已内置 Python 运行时、Tcl/Tk 和拖放依赖，目标电脑无需安装 Python 或 Python Launcher。
+2. 添加多个 `.nk` 或拖入文件夹；文件夹会递归查找 `.nk`。
+3. 点击“扫描素材”，核对缺失 / 待处理项。
+4. 将一个文件夹拖到“输出目录”输入框，自动使用该路径；也可点击 `...` 选择目录。点击“开始打包”。拖到其他区域的文件夹仍用于添加工程。
 
-   ```powershell
-   python -m pip install -r requirements.txt
-   python app.py
-   ```
-
-3. 添加多个 `.nk` 或拖入文件夹；文件夹会递归查找 `.nk`。
-4. 点击“扫描素材”，核对缺失 / 待处理项。
-5. 选择输出目录，点击“开始打包”。
+分发时只需复制 `NukeBatchPackager.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
 
 扫描和复制在后台线程执行，窗口保持可操作。整体进度条显示已处理工程数；当前阶段进度条显示节点扫描百分比或已复制数据量，大文件复制时也会更新。读取工程和生成报告期间显示等待动画。点击“取消”会清理当前未完成工程，保留已完成结果。
 
-打包配置与构建产物统一放在 `tools` 目录。在项目根目录执行：
+## 源码运行与构建 EXE
+
+仅开发或自行构建时需要安装 Python 3.10 或更高版本，并保留 Tcl/Tk 支持。在项目根目录执行：
+
+```powershell
+python -m pip install -r requirements.txt
+python app.py
+```
+
+打包配置与构建产物统一放在 `tools` 目录。生成单文件 EXE：
 
 ```powershell
 python -m pip install -r tools/requirements-build.txt
 python -m PyInstaller --workpath tools/build --distpath tools/dist tools/NukeBatchPackager.spec
 ```
 
-生成的程序为 `tools/dist/NukeBatchPackager/NukeBatchPackager.exe`。
-分发时复制整个 `tools/dist/NukeBatchPackager` 文件夹，目标机器不需要 Python。
+生成的程序为 `tools/dist/NukeBatchPackager.exe`，无需附带 `_internal` 文件夹。
 界面使用 Tkinter，文件拖入使用 `tkinterdnd2` 扩展；不依赖 Qt。
 
 ## 收集规则
@@ -80,5 +83,5 @@ python cli.py "D:/shots" --output "E:/delivery"
 python -m unittest discover -s tests -v
 ```
 
-窗口测试需要可用的桌面环境。18 项测试覆盖核心收集规则、窗口扫描与打包、拖入路径解析、异步进度刷新、大文件复制中途取消、错误恢复和关闭时等待清理。
+窗口测试需要可用的桌面环境。19 项测试覆盖核心收集规则、窗口扫描与打包、工程与输出目录拖入、异步进度刷新、大文件复制中途取消、错误恢复和关闭时等待清理。
 尚未进行真实 Nuke 工程加载验证。首次使用建议先打包一个小工程，在 Nuke 中打开副本验证。

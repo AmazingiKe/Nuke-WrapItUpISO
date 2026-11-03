@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from tkinterdnd2 import DND_FILES, TkinterDnD
+from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from core import Cancelled, package, scan
 from app_version import VERSION
 
@@ -127,8 +127,11 @@ class Window(TkinterDnD.Tk):
         ttk.Label(output_row, text='输出目录').pack(side='left', padx=(0, 8))
         self.output_entry = ttk.Entry(output_row, textvariable=self.output)
         self.output_entry.pack(side='left', fill='x', expand=True)
-        self.choose = ttk.Button(output_row, text='浏览', command=self.choose_output)
+        self.choose = ttk.Button(output_row, text='...', width=3, command=self.choose_output)
         self.choose.pack(side='left', padx=(8, 0))
+        for widget in (output_row, self.output_entry, self.choose):
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind('<<Drop>>', self.on_output_drop)
         ttk.Label(root, textvariable=self.count).pack(anchor='w', pady=10)
         table_frame = ttk.Frame(root)
         table_frame.pack(fill='both', expand=True)
@@ -183,7 +186,24 @@ class Window(TkinterDnD.Tk):
         self.count.set(f'已添加 {len(self.paths)} 个工程')
 
     def on_drop(self, event):
+        if self.busy():
+            return REFUSE_DROP
         self.add(self.tk.splitlist(event.data))
+        return COPY
+
+    def on_output_drop(self, event):
+        if self.busy():
+            return REFUSE_DROP
+        try:
+            paths = self.tk.splitlist(event.data)
+            if len(paths) == 1 and Path(paths[0]).is_dir():
+                self.output.set(str(Path(paths[0]).resolve()))
+                return COPY
+        except (OSError, tk.TclError) as error:
+            self.append_log(f'读取输出目录失败：{error}')
+            return REFUSE_DROP
+        self.append_log('请拖入一个文件夹作为输出目录。')
+        return REFUSE_DROP
 
     def add_files(self):
         self.add(filedialog.askopenfilenames(parent=self, title='选择 Nuke 工程', filetypes=[('Nuke', '*.nk')]))
