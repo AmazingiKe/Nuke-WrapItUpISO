@@ -117,6 +117,8 @@ class WindowTests(unittest.TestCase):
         self.window.scan_only()
         self.wait_finished()
         self.assertIn('ValueError', self.log())
+        self.window.project_table.selection_set(str(self.source.resolve()))
+        self.window.update()
         self.assertEqual(len(self.window.table.get_children()), 1)
         self.assertIn('存在失败', self.window.progress_text.get())
         self.assertIn('成功 1 · 失败 1', self.window.total_text.get())
@@ -171,6 +173,46 @@ class WindowTests(unittest.TestCase):
         self.window.close()
         with self.assertRaises(tk.TclError):
             self.window.winfo_exists()
+
+    def test_project_selection_keeps_assets_and_dependencies_separate(self):
+        second_dir = self.folder / 'second'
+        second_dir.mkdir()
+        second = second_dir / self.source.name
+        second.write_text('Read {\n file missing.exr\n name other\n}\nVendorGizmo {\n name custom\n}\n', encoding='utf-8')
+        self.window.add([self.source, second])
+        self.assertEqual(len(self.window.project_table.get_children()), 2)
+        self.assertEqual(len(self.window.table.get_children()), 0)
+        self.assertIn('未扫描', self.window.detail_summary.get())
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertEqual(self.window.project_table.selection(), (str(self.source.resolve()),))
+        self.assertEqual(len(self.window.table.get_children()), 1)
+        self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
+        self.window.project_table.selection_set(str(second.resolve()))
+        self.window.update()
+        self.assertEqual(len(self.window.table.get_children()), 1)
+        row = self.window.table.item(self.window.table.get_children()[0], 'values')
+        self.assertIn('missing.exr', row)
+        self.assertIn('缺失', row)
+        self.assertIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
+        self.assertIn('未识别', self.window.dependencies.get('1.0', 'end'))
+        self.assertEqual(self.window.detail_path.get(), str(second.resolve()))
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertEqual(len(self.window.table.get_children()), 1)
+        self.window.clear()
+        self.assertEqual(self.window.project_table.get_children(), ())
+        self.assertEqual(self.window.table.get_children(), ())
+        self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
+
+    def test_failed_scan_shows_error_for_selected_project(self):
+        self.source.write_text('Read {', encoding='utf-8')
+        self.window.add([self.source])
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertIn('失败', self.window.project_table.item(str(self.source.resolve()), 'values'))
+        self.assertEqual(self.window.table.get_children(), ())
+        self.assertIn('ValueError', self.window.detail_summary.get())
 
     def test_partial_progress_renders_while_worker_is_running(self):
         entered, release = threading.Event(), threading.Event()

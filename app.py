@@ -46,6 +46,7 @@ class Worker(threading.Thread):
                     cancelled = True
                     break
                 self.emit('project', index, len(self.paths), path.name)
+                self.emit('project_state', path, '扫描中')
                 self.report_progress('读取工程', 0, 0, path.name)
                 try:
                     self.emit('message', '扫描：' + str(path))
@@ -57,6 +58,7 @@ class Worker(threading.Thread):
                         raise Cancelled()
                     self.emit('scanned', plan, size)
                     if self.output:
+                        self.emit('project_state', path, '打包中')
                         self.report_progress('准备打包', 0, 0, path.name)
                         result = package(
                             plan, self.output, self.cancelled.is_set,
@@ -65,13 +67,16 @@ class Worker(threading.Thread):
                         )
                         issues = sum(asset.status != '就绪' for asset in plan.assets)
                         self.emit('message', f'已生成：{result}；需核对 {issues} 项，另请检查插件依赖提示。')
+                        self.emit('project_state', path, '已打包')
                     completed += 1
                 except Cancelled:
                     cancelled = True
+                    self.emit('project_state', path, '已取消')
                     self.emit('message', '操作已取消，当前工程的未完成文件已清理。')
                     break
                 except Exception as error:
                     failed += 1
+                    self.emit('project_state', path, '失败', f'{type(error).__name__}: {error}')
                     self.emit('message', f'失败：{path}\n{type(error).__name__}: {error}')
                 self.emit('project_done', completed + failed, len(self.paths))
         finally:
@@ -85,6 +90,8 @@ class Window(TkinterDnD.Tk):
         self.geometry('1160x760')
         self.minsize(780, 520)
         self.paths = []
+        self.plans = {}
+        self.project_errors = {}
         self.worker = None
         self.events = Queue()
         self.closing = False
@@ -93,6 +100,8 @@ class Window(TkinterDnD.Tk):
         self.count = tk.StringVar(self, value='尚未添加工程')
         self.progress_text = tk.StringVar(self, value='就绪')
         self.total_text = tk.StringVar(self, value='整体进度：尚未开始')
+        self.detail_path = tk.StringVar(self)
+        self.detail_summary = tk.StringVar(self, value='选择左侧工程查看素材与依赖')
         self._build_widgets()
         self.drop_target_register(DND_FILES)
         self.dnd_bind('<<Drop>>', self.on_drop)
@@ -136,15 +145,41 @@ class Window(TkinterDnD.Tk):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind('<<Drop>>', self.on_output_drop)
         ttk.Label(root, textvariable=self.count).pack(anchor='w', pady=10)
-        table_frame = ttk.Frame(root)
+        self.panes = ttk.Panedwindow(root, orient='horizontal')
+        self.panes.pack(fill='both', expand=True)
+        projects = ttk.Frame(self.panes, width=330, padding=(0, 0, 10, 0))
+        details = ttk.Frame(self.panes, padding=(10, 0, 0, 0))
+        self.panes.add(projects, weight=1)
+        self.panes.add(details, weight=3)
+        ttk.Label(projects, text='已添加的工程').pack(anchor='w', pady=(0, 6))
+        project_frame = ttk.Frame(projects)
+        project_frame.pack(fill='both', expand=True)
+        project_frame.rowconfigure(0, weight=1)
+        project_frame.columnconfigure(0, weight=1)
+        self.project_table = ttk.Treeview(project_frame, columns=('name', 'status', 'assets'),
+                                          show='headings', selectmode='browse', height=6)
+        for column, heading, width in [('name', '工程', 175), ('status', '状态', 85), ('assets', '素材', 55)]:
+            self.project_table.heading(column, text=heading)
+            self.project_table.column(column, width=width, minwidth=45, stretch=column == 'name')
+        project_scroll = ttk.Scrollbar(project_frame, orient='vertical', command=self.project_table.yview)
+        project_horizontal = ttk.Scrollbar(project_frame, orient='horizontal', command=self.project_table.xview)
+        self.project_table.configure(yscrollcommand=project_scroll.set, xscrollcommand=project_horizontal.set)
+        self.project_table.grid(row=0, column=0, sticky='nsew')
+        project_scroll.grid(row=0, column=1, sticky='ns')
+        project_horizontal.grid(row=1, column=0, sticky='ew')
+        self.project_table.bind('<<TreeviewSelect>>', self.render_selected_project)
+        ttk.Label(details, text='所选工程的素材与依赖').pack(anchor='w', pady=(0, 6))
+        ttk.Entry(details, textvariable=self.detail_path, state='readonly').pack(fill='x')
+        ttk.Label(details, textvariable=self.detail_summary, width=1).pack(fill='x', pady=6)
+        table_frame = ttk.Frame(details)
         table_frame.pack(fill='both', expand=True)
         table_frame.rowconfigure(0, weight=1)
         table_frame.columnconfigure(0, weight=1)
-        columns = ('project', 'node', 'knob', 'path', 'status', 'files', 'note')
-        self.table = ttk.Treeview(table_frame, columns=columns, show='headings')
+        columns = ('node', 'knob', 'path', 'status', 'files', 'note')
+        self.table = ttk.Treeview(table_frame, columns=columns, show='headings', height=4)
         for column, heading, width in zip(
-            columns, ['工程', '节点', '参数', '原路径', '状态', '文件数', '说明'],
-            [160, 120, 90, 300, 80, 65, 280],
+            columns, ['节点', '参数', '原路径', '状态', '文件数', '说明'],
+            [100, 70, 240, 70, 60, 180],
         ):
             self.table.heading(column, text=heading)
             self.table.column(column, width=width, minwidth=55)
@@ -154,15 +189,21 @@ class Window(TkinterDnD.Tk):
         self.table.grid(row=0, column=0, sticky='nsew')
         vertical.grid(row=0, column=1, sticky='ns')
         horizontal.grid(row=1, column=0, sticky='ew')
-        ttk.Label(root, textvariable=self.total_text).pack(anchor='w', pady=(12, 0))
-        self.total_progress = ttk.Progressbar(root, mode='determinate', maximum=1)
+        ttk.Label(details, text='插件与外部依赖提示 · 需人工核对').pack(anchor='w', pady=(8, 4))
+        self.dependencies = ScrolledText(details, height=3, wrap='word', state='disabled')
+        self.dependencies.pack(fill='x')
+        # Reserve the footer first, letting the split pane shrink on small windows.
+        footer = ttk.Frame(root)
+        footer.pack(side='bottom', fill='x', before=self.panes)
+        ttk.Label(footer, textvariable=self.total_text).pack(anchor='w', pady=(12, 0))
+        self.total_progress = ttk.Progressbar(footer, mode='determinate', maximum=1)
         self.total_progress.pack(fill='x', pady=(4, 0))
-        self.progress = ttk.Progressbar(root, mode='determinate', maximum=1)
+        self.progress = ttk.Progressbar(footer, mode='determinate', maximum=1)
         self.progress.pack(fill='x', pady=(12, 4))
-        ttk.Label(root, textvariable=self.progress_text).pack(anchor='w')
-        self.log = ScrolledText(root, height=7, wrap='word', state='disabled')
+        ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
+        self.log = ScrolledText(footer, height=4, wrap='word', state='disabled')
         self.log.pack(fill='x', pady=10)
-        ttk.Label(root, text='离线限制：TCL 动态路径、外部 Gizmo / 插件、隐式 OCIO 依赖需人工核对。Write 输出不收集。', wraplength=730).pack(anchor='w')
+        ttk.Label(footer, text='离线限制：TCL 动态路径、外部 Gizmo / 插件、隐式 OCIO 依赖需人工核对。Write 输出不收集。', wraplength=730).pack(anchor='w')
 
     def busy(self):
         return self.worker is not None
@@ -184,9 +225,14 @@ class Window(TkinterDnD.Tk):
                     item = item.resolve()
                     if item.is_file() and item.suffix.lower() == '.nk' and item not in self.paths:
                         self.paths.append(item)
+                        self.project_table.insert('', 'end', iid=str(item), values=(item.name, '未扫描', '—'))
             except OSError as error:
                 self.append_log(f'添加失败：{path}；{error}')
         self.count.set(f'已添加 {len(self.paths)} 个工程')
+        if self.paths and not self.project_table.selection():
+            self.project_table.selection_set(str(self.paths[0]))
+            self.project_table.focus(str(self.paths[0]))
+        self.render_selected_project()
 
     def on_drop(self, event):
         if self.busy():
@@ -225,7 +271,10 @@ class Window(TkinterDnD.Tk):
         if self.busy():
             return
         self.paths.clear()
-        self.table.delete(*self.table.get_children())
+        self.plans.clear()
+        self.project_errors.clear()
+        self.project_table.delete(*self.project_table.get_children())
+        self.render_selected_project()
         self.count.set('尚未添加工程')
         self.log.configure(state='normal')
         self.log.delete('1.0', 'end')
@@ -247,7 +296,11 @@ class Window(TkinterDnD.Tk):
         if not self.paths:
             messagebox.showinfo('添加工程', '请先添加 .nk 工程。', parent=self)
             return
-        self.table.delete(*self.table.get_children())
+        self.plans.clear()
+        self.project_errors.clear()
+        for path in self.paths:
+            self.project_table.item(str(path), values=(path.name, '等待扫描', '—'))
+        self.render_selected_project()
         self.total_progress.configure(maximum=len(self.paths), value=0)
         self.total_text.set(f'整体进度：0/{len(self.paths)} 个工程')
         self.progress.configure(mode='indeterminate', value=0)
@@ -265,6 +318,7 @@ class Window(TkinterDnD.Tk):
             'message': self.append_log, 'scanned': self.show_plan,
             'progress': self.show_progress, 'finished': self.finished,
             'project': self.show_project, 'project_done': self.project_done,
+            'project_state': self.set_project_state,
         }
         # Bound batches so large queues do not starve redraws or cancellation.
         for _ in range(200):
@@ -284,14 +338,45 @@ class Window(TkinterDnD.Tk):
         self.poll_id = self.after(50, self.poll_events)
 
     def show_plan(self, plan, size):
-        for asset in plan.assets:
-            self.table.insert('', 'end', values=(
-                plan.script.name, asset.node, asset.knob, asset.raw,
-                asset.status, len(asset.files), asset.note,
-            ))
+        self.plans[plan.script] = (plan, size)
+        self.project_table.set(str(plan.script), 'assets', len(plan.assets))
+        self.set_project_state(plan.script, '需核对' if any(a.status != '就绪' for a in plan.assets) else '已扫描')
         self.append_log(f'{plan.script.name}：{len(plan.assets)} 项引用，约 {size / 1024 / 1024:.1f} MiB')
         for warning in plan.warnings:
             self.append_log('提示：' + warning)
+
+    def set_project_state(self, path, status, error=''):
+        self.project_table.set(str(path), 'status', status)
+        if error:
+            self.project_errors[path] = error
+        if self.project_table.selection() == (str(path),):
+            self.render_selected_project()
+
+    def render_selected_project(self, event=None):
+        self.table.delete(*self.table.get_children())
+        self.dependencies.configure(state='normal')
+        self.dependencies.delete('1.0', 'end')
+        selection = self.project_table.selection()
+        self.detail_path.set(selection[0] if selection else '')
+        if not selection:
+            self.detail_summary.set('选择左侧工程查看素材与依赖')
+        else:
+            path = Path(selection[0])
+            status = self.project_table.set(selection[0], 'status')
+            error = self.project_errors.get(path, '')
+            cached = self.plans.get(path)
+            if cached is None:
+                self.detail_summary.set(error or f'{status} · 点击“扫描素材”查看依赖')
+            else:
+                plan, size = cached
+                issues = sum(asset.status != '就绪' for asset in plan.assets)
+                self.detail_summary.set(error or f'{status} · {len(plan.assets)} 项素材引用 · 需核对 {issues} 项 · {size / 1048576:.1f} MiB')
+                for asset in plan.assets:
+                    self.table.insert('', 'end', values=(
+                        asset.node, asset.knob, asset.raw, asset.status, len(asset.files), asset.note,
+                    ))
+                self.dependencies.insert('end', '\n'.join(plan.warnings))
+        self.dependencies.configure(state='disabled')
 
     def show_project(self, index, total, name):
         self.total_text.set(f'当前工程 {index}/{total} · {name}')
@@ -322,6 +407,9 @@ class Window(TkinterDnD.Tk):
     def finished(self, completed, failed, cancelled):
         self.worker.join()
         self.worker = None
+        for path in self.paths:
+            if self.project_table.set(str(path), 'status') == '等待扫描':
+                self.set_project_state(path, '未扫描')
         for control in self.controls + [self.choose, self.output_entry]:
             control.state(['!disabled'])
         self.cancel.state(['disabled'])
