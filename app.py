@@ -49,6 +49,77 @@ def brief_asset_summary(plan):
     return '，'.join(parts)
 
 
+class CombinedProgress(tk.Canvas):
+    """One track: completed projects, followed by work within the current project."""
+    def __init__(self, parent):
+        super().__init__(parent, height=24, highlightthickness=0, background='#e4e9f0')
+        self.projects_done = 0
+        self.projects_total = 1
+        self.task_fraction = 0
+        self.animation_id = None
+        self.pulse = 0
+        self.bind('<Configure>', lambda event: self.redraw())
+
+    def set_projects(self, done, total):
+        self.stop_animation()
+        self.projects_total = max(1, total)
+        self.projects_done = max(0, min(done, self.projects_total))
+        self.task_fraction = 0
+        self.redraw()
+
+    def set_tasks(self, done, total):
+        self.stop_animation()
+        self.task_fraction = max(0, min(done / total, 1)) if total else 0
+        if not total and self.projects_done < self.projects_total:
+            self.pulse = 0
+            self.animate()
+        else:
+            self.redraw()
+
+    def fractions(self):
+        dark = self.projects_done / self.projects_total
+        light = min(1, dark + self.task_fraction / self.projects_total)
+        return dark, light
+
+    def redraw(self):
+        width, height = self.winfo_width(), self.winfo_height()
+        dark, light = self.fractions()
+        self.delete('all')
+        if self.animation_id is not None:
+            segment = width / self.projects_total
+            start = width * dark + self.pulse * segment * 0.7
+            self.create_rectangle(start, 0, start + segment * 0.3, height,
+                                  fill='#9ec8e8', outline='', tags='tasks')
+        else:
+            self.create_rectangle(width * dark, 0, width * light, height,
+                                  fill='#9ec8e8', outline='', tags='tasks')
+        self.create_rectangle(0, 0, width * dark, height,
+                              fill='#245780', outline='', tags='projects')
+        if self.projects_total <= 30:
+            for index in range(1, self.projects_total):
+                x = width * index / self.projects_total
+                self.create_line(x, 0, x, height, fill='#ffffff', tags='separators')
+
+    def animate(self):
+        self.pulse = (self.pulse + 0.06) % 1
+        self.animation_id = self.after(60, self.animate)
+        self.redraw()
+
+    def stop_animation(self):
+        if self.animation_id is not None:
+            self.after_cancel(self.animation_id)
+            self.animation_id = None
+
+    def finish(self):
+        self.stop_animation()
+        self.task_fraction = 0
+        self.redraw()
+
+    def destroy(self):
+        self.stop_animation()
+        super().destroy()
+
+
 class Worker(threading.Thread):
     def __init__(self, paths, output, events, plugin_paths=None, plugin_overrides=None):
         super().__init__(daemon=False)
@@ -60,6 +131,10 @@ class Worker(threading.Thread):
         self.cancelled = threading.Event()
         self.last_progress = None
         self.last_progress_time = 0
+        self.copy_sizes = []
+        self.copied_files = 0
+        self.copy_bytes = 0
+        self.file_start_bytes = 0
 
     def emit(self, kind, *values):
         self.events.put((kind, values))
@@ -73,8 +148,20 @@ class Worker(threading.Thread):
             self.last_progress_time = now
 
     def file_copied(self, done, total, name):
+        self.copied_files = done
+        self.file_start_bytes = self.copy_bytes
+        self.report_progress('复制文件', done, total, name)
         if done == total:
             self.report_progress('写入工程与报告', 0, 0, '正在完成打包')
+
+    def copy_byte_progress(self, done, total, name):
+        self.copy_bytes = done
+        fraction = 0
+        if self.copied_files < len(self.copy_sizes):
+            size = self.copy_sizes[self.copied_files]
+            fraction = min(1, max(0, done - self.file_start_bytes) / size) if size else 0
+        self.report_progress('复制文件', self.copied_files + fraction, len(self.copy_sizes),
+                             f'{done / 1048576:.1f}/{total / 1048576:.1f} MiB · {name}')
 
     def run(self):
         completed = failed = 0
@@ -103,10 +190,13 @@ class Worker(threading.Thread):
                     if self.output:
                         self.emit('project_state', path, '打包中')
                         self.report_progress('准备打包', 0, 0, path.name)
+                        files = dict.fromkeys(file for asset in plan.assets for file in asset.files)
+                        self.copy_sizes = [file.stat().st_size for file in files]
+                        self.copied_files = self.copy_bytes = self.file_start_bytes = 0
                         package(
                             plan, self.output, self.cancelled.is_set,
                             self.file_copied,
-                            byte_progress=lambda *values: self.report_progress('复制素材', *values),
+                            byte_progress=self.copy_byte_progress,
                         )
                         self.emit('project_state', path, '已打包·需核对' if needs_review(plan) else '已打包')
                     action = '打包完成' if self.output else '扫描完成'
@@ -242,11 +332,13 @@ class Window(TkinterDnD.Tk):
         # Reserve the footer first, letting the split pane shrink on small windows.
         footer = ttk.Frame(root)
         footer.pack(side='bottom', fill='x', before=self.panes)
-        ttk.Label(footer, textvariable=self.total_text).pack(anchor='w', pady=(12, 0))
-        self.total_progress = ttk.Progressbar(footer, mode='determinate', maximum=1)
-        self.total_progress.pack(fill='x', pady=(4, 0))
-        self.progress = ttk.Progressbar(footer, mode='determinate', maximum=1)
-        self.progress.pack(fill='x', pady=(12, 4))
+        progress_header = ttk.Frame(footer)
+        progress_header.pack(fill='x', pady=(12, 0))
+        ttk.Label(progress_header, text='深色：工程数  ·  浅色：当前阶段任务',
+                  foreground='#245780').pack(side='right')
+        ttk.Label(progress_header, textvariable=self.total_text).pack(side='left', fill='x', expand=True)
+        self.progress = CombinedProgress(footer)
+        self.progress.pack(fill='x', pady=(4, 4))
         ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
         ttk.Label(footer, text='日志').pack(anchor='w', pady=(8, 4))
         self.log = ScrolledText(footer, height=5, wrap='word', state='disabled')
@@ -421,10 +513,9 @@ class Window(TkinterDnD.Tk):
         for path in self.paths:
             self.project_table.item(str(path), values=(path.name, '等待扫描', '—'))
         self.render_selected_project()
-        self.total_progress.configure(maximum=len(self.paths), value=0)
+        self.progress.set_projects(0, len(self.paths))
         self.total_text.set(f'整体进度：0/{len(self.paths)} 个工程')
-        self.progress.configure(mode='indeterminate', value=0)
-        self.progress.start(12)
+        self.progress.set_tasks(0, 0)
         self.progress_text.set('正在扫描…')
         for control in self.controls + [self.choose, self.output_entry]:
             control.state(['disabled'])
@@ -572,24 +663,23 @@ class Window(TkinterDnD.Tk):
         self.dependencies.configure(state='disabled')
 
     def show_project(self, index, total, name):
-        self.total_text.set(f'当前工程 {index}/{total} · {name}')
+        self.progress.set_projects(index - 1, total)
+        self.progress.set_tasks(0, 0)
+        self.total_text.set(f'已处理 {index - 1}/{total} 个工程 · 当前 {index}/{total} · {name}')
 
     def project_done(self, done, total):
-        self.total_progress.configure(maximum=total, value=done)
+        self.progress.set_projects(done, total)
 
     def show_progress(self, phase, done, total, detail):
         if self.worker and self.worker.cancelled.is_set():
             return
-        self.progress.stop()
+        self.progress.set_tasks(done, total)
         if total:
             percent = min(100, done / total * 100)
-            self.progress.configure(mode='determinate', maximum=100, value=percent)
-            amount = f'{done / 1048576:.1f}/{total / 1048576:.1f} MiB' if phase == '复制素材' else f'{done}/{total} 节点'
+            amount = f'任务 {int(done)}/{total}'
             self.progress_text.set(f'{phase} · {percent:.1f}% · {amount} · {detail}')
         else:
-            self.progress.configure(mode='indeterminate', value=0)
-            self.progress.start(12)
-            self.progress_text.set(f'{phase} · {detail}')
+            self.progress_text.set(f'{phase} · 正在统计或处理任务 · {detail}')
 
     def stop(self):
         if self.worker:
@@ -606,8 +696,8 @@ class Window(TkinterDnD.Tk):
         for control in self.controls + [self.choose, self.output_entry]:
             control.state(['!disabled'])
         self.cancel.state(['disabled'])
-        self.progress.stop()
-        self.progress.configure(mode='determinate', maximum=100, value=0 if cancelled or failed else 100)
+        self.progress.set_projects(completed + failed, len(self.paths))
+        self.progress.finish()
         outcome = '已取消' if cancelled else ('结束，存在失败' if failed else '任务完成')
         self.progress_text.set(outcome)
         self.total_text.set(f'{outcome} · 成功 {completed} · 失败 {failed} · 共 {len(self.paths)} 个工程')

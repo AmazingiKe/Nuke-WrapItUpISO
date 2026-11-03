@@ -218,7 +218,7 @@ class WindowTests(unittest.TestCase):
             self.wait_finished()
         self.assertIn('已取消', self.log())
         self.assertIn('已取消', self.window.progress_text.get())
-        self.assertLess(float(self.window.total_progress['value']), float(self.window.total_progress['maximum']))
+        self.assertLess(self.window.progress.projects_done, self.window.progress.projects_total)
 
     def test_close_waits_for_background_cleanup(self):
         entered, cleanup_allowed = threading.Event(), threading.Event()
@@ -379,6 +379,48 @@ class WindowTests(unittest.TestCase):
             finally:
                 release.set()
                 self.wait_finished()
+
+    def test_combined_progress_places_task_fill_inside_current_project(self):
+        bar = self.window.progress
+        bar.set_projects(1, 4)
+        bar.set_tasks(2, 8)
+        self.assertEqual(bar.fractions(), (0.25, 0.3125))
+        bar.set_projects(2, 4)
+        bar.set_tasks(0, 6)
+        self.assertEqual(bar.fractions(), (0.5, 0.5))
+        bar.set_tasks(6, 6)
+        self.assertEqual(bar.fractions(), (0.5, 0.75))
+        bar.set_projects(4, 4)
+        self.assertEqual(bar.fractions(), (1.0, 1.0))
+        self.assertFalse(hasattr(self.window, 'total_progress'))
+
+    def test_unknown_task_count_stops_animation_on_finish_and_reset(self):
+        bar = self.window.progress
+        bar.set_projects(1, 3)
+        bar.set_tasks(0, 0)
+        self.assertIsNotNone(bar.animation_id)
+        bar.finish()
+        self.assertIsNone(bar.animation_id)
+        self.assertEqual(bar.fractions(), (1 / 3, 1 / 3))
+        bar.set_projects(0, 2)
+        self.assertEqual(bar.fractions(), (0, 0))
+
+    def test_copy_progress_counts_files_and_retains_partial_file_updates(self):
+        from app import Worker
+        from queue import Queue
+        worker = Worker([], None, Queue())
+        worker.copy_sizes = [100, 300]
+        worker.copy_byte_progress(50, 400, 'first.exr')
+        phase, done, total, detail = worker.events.get_nowait()[1]
+        self.assertEqual((phase, done, total), ('复制文件', 0.5, 2))
+        worker.copy_byte_progress(100, 400, 'first.exr')
+        worker.file_copied(1, 2, 'first.exr')
+        worker.last_progress_time = 0
+        worker.copy_byte_progress(250, 400, 'second.exr')
+        events = []
+        while not worker.events.empty():
+            events.append(worker.events.get_nowait())
+        self.assertEqual(events[-1][1][:3], ('复制文件', 1.5, 2))
 
 
 if __name__ == '__main__':
