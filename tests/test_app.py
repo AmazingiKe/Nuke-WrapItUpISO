@@ -22,6 +22,9 @@ class WindowTests(unittest.TestCase):
         self.source.write_text('Read {\n file plate.exr\n name plate\n}\n', encoding='utf-8')
         self.window = Window()
         self.window.withdraw()
+        defaults = patch('gizmo.default_paths', return_value=[])
+        self.default_paths = defaults.start()
+        self.addCleanup(defaults.stop)
 
     def tearDown(self):
         try:
@@ -121,68 +124,6 @@ class WindowTests(unittest.TestCase):
             self.window.choose_projects()
         self.assertEqual(len(self.window.paths), 3)
 
-    def test_plugin_directory_dialog_add_remove_save_and_cancel(self):
-        self.window.plugin_paths = []
-        self.window.add([self.source])
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertTrue(self.window.plans)
-        self.window.configure_plugins()
-        dialog = next(w for w in self.window.winfo_children() if isinstance(w, tk.Toplevel))
-        def descendants(widget):
-            for child in widget.winfo_children():
-                yield child
-                yield from descendants(child)
-        widgets = list(descendants(dialog))
-        listing = next(w for w in widgets if isinstance(w, tk.Listbox))
-        buttons = {str(w.cget('text')): w for w in widgets if w.winfo_class() == 'TButton'}
-        first, second = self.folder / 'first_plugins', self.folder / 'second_plugins'
-        first.mkdir(); second.mkdir()
-        with patch('app.filedialog.askdirectory', side_effect=['', str(first), str(first), str(second)]):
-            for _ in range(4):
-                buttons['添加目录'].invoke()
-        self.assertEqual(listing.get(0, 'end'), (str(first), str(second)))
-        listing.selection_set(0)
-        buttons['移除选中'].invoke()
-        buttons['保存'].invoke()
-        self.assertEqual(self.window.plugin_paths, [str(second)])
-        self.assertEqual(self.window.plans, {})
-        self.assertIn('待重新扫描', self.window.project_table.item(str(self.source), 'values'))
-        self.assertEqual(self.window.paths, [self.source])
-        self.window.configure_plugins()
-        dialog = next(w for w in self.window.winfo_children() if isinstance(w, tk.Toplevel))
-        listing = next(w for w in descendants(dialog) if isinstance(w, tk.Listbox))
-        listing.insert('end', str(first))
-        dialog.destroy()
-        self.assertEqual(self.window.plugin_paths, [str(second)])
-
-    def test_plugin_source_selection_validates_selection_and_filename(self):
-        self.window.plugin_paths = []
-        with patch('app.messagebox.showinfo') as info:
-            self.window.choose_plugin_source()
-        info.assert_called_once()
-        self.source.write_text('Demo {\n name Demo1\n}\n')
-        self.window.add([self.source])
-        self.window.scan_only()
-        self.wait_finished()
-        self.window.table.selection_set(self.window.table.get_children()[0])
-        with patch('app.filedialog.askopenfilename', return_value=str(self.folder / 'Wrong.gizmo')):
-            with patch('app.messagebox.showerror') as error:
-                self.window.choose_plugin_source()
-        error.assert_called_once()
-        self.assertEqual(self.window.plugin_overrides, {})
-        with patch('app.filedialog.askopenfilename', return_value=''):
-            self.window.choose_plugin_source()
-        self.assertEqual(self.window.plugin_overrides, {})
-        selected = self.folder / 'Demo.gizmo'
-        selected.write_text('Gizmo {\n name Demo\n}\nend_group\n')
-        with patch('app.filedialog.askopenfilename', return_value=str(selected)):
-            self.window.choose_plugin_source()
-        self.window.scan_only()
-        self.wait_finished()
-        plan, _ = self.window.plans[self.source]
-        self.assertEqual(plan.plugins[0].source, str(selected))
-        self.assertEqual(plan.plugins[0].status, '就绪')
 
     def test_output_drop_accepts_one_folder_without_adding_projects(self):
         destination = self.folder / '中文 输出目录'
@@ -296,7 +237,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(self.window.table.get_children(), ())
         self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
 
-    def test_gizmo_conflict_selection_and_delivery_from_window(self):
+    def test_gizmo_conflict_is_resolved_automatically_from_window(self):
         plugins = self.folder / 'plugins'
         other = plugins / 'other'
         other.mkdir(parents=True)
@@ -305,29 +246,43 @@ class WindowTests(unittest.TestCase):
         selected = other / 'Demo.gizmo'
         selected.write_text('Gizmo {\n name Demo\n}\nBlur {\n name blur\n}\nend_group\n')
         self.source.write_text('Demo {\n name Demo1\n}\n')
-        self.window.plugin_paths = [str(plugins)]
+        self.default_paths.return_value = [plugins]
         self.window.add([self.source])
         self.window.scan_only()
         self.wait_finished()
         self.assertIn('需核对', self.window.project_table.item(str(self.source), 'values'))
         row = self.window.table.get_children()[0]
         self.assertEqual(self.window.table.set(row, 'type'), '插件')
-        self.assertEqual(self.window.table.set(row, 'status'), '×')
+        self.assertEqual(self.window.table.set(row, 'status'), '√')
         self.window.output.set(str(self.folder / 'delivery'))
         self.window.pack()
         self.wait_finished()
-        self.assertIn('依赖待处理', self.window.project_table.item(str(self.source), 'values'))
-        self.assertFalse(list(self.folder.rglob('report.json')))
+        self.assertIn('已打包·需核对', self.window.project_table.item(str(self.source), 'values'))
         self.window.table.selection_set(self.window.table.get_children()[0])
         self.window.update()
         self.assertIn(str(selected), self.window.dependencies.get('1.0', 'end'))
-        with patch('app.filedialog.askopenfilename', return_value=str(selected)):
-            self.window.choose_plugin_source()
-        self.window.pack()
-        self.wait_finished()
         report = json.loads(next(self.folder.rglob('report.json')).read_text(encoding='utf-8'))
-        self.assertEqual(report['plugins'][0]['source'], str(selected))
+        self.assertEqual(report['plugins'][0]['source'], str(first))
+        self.assertIn('自动选择', ' '.join(report['warnings']))
         self.assertTrue(report['gizmo_dependencies_complete'])
+
+    def test_default_package_discovers_paths_and_skips_missing_without_dialogs(self):
+        startup, external = self.folder / 'startup', self.folder / 'external'
+        startup.mkdir(); external.mkdir()
+        (startup / 'init.py').write_text("import nuke\nnuke.pluginAddPath('../external')")
+        (external / 'Demo.gizmo').write_text('Gizmo {\n name Demo\n}\nend_group\n')
+        self.source.write_text('Demo {\n name demo\n}\nMissing {\n name missing\n}\n')
+        self.window.add([self.source])
+        self.window.output.set(str(self.folder / 'delivery'))
+        with patch('gizmo.default_paths', return_value=[startup]), patch('app.messagebox.showerror') as error:
+            self.window.pack()
+            self.wait_finished()
+        error.assert_not_called()
+        report_path = next(self.folder.rglob('report.json'))
+        report = json.loads(report_path.read_text(encoding='utf-8'))
+        self.assertFalse(report['gizmo_dependencies_complete'])
+        self.assertTrue((report_path.parent / 'gizmos/Demo.gizmo').exists())
+        self.assertIn('跳过缺失插件 1 项', self.log())
 
     def test_failed_scan_shows_error_for_selected_project(self):
         self.source.write_text('Read {', encoding='utf-8')
@@ -376,7 +331,7 @@ class WindowTests(unittest.TestCase):
     def test_partial_progress_renders_while_worker_is_running(self):
         entered, release = threading.Event(), threading.Event()
 
-        def slow_scan(path, cancel, progress):
+        def slow_scan(path, cancel, progress, **kwargs):
             progress(1, 4, 'plate')
             entered.set()
             release.wait(5)

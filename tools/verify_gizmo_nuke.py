@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import zlib
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core import scan, package
@@ -31,7 +32,8 @@ def verify(nuke, gui=False):
         (source / 'Outer.gizmo').write_text('Gizmo {\n inputs 0\n name Outer\n}\nInner {\n inputs 0\n name Inner1\n}\nOutput {\n name Output1\n}\nend_group\n')
         script = source / 'test.nk'
         script.write_text('version 15.1 v5\nRoot {\n}\nOuter {\n inputs 0\n name Outer1\n}\n')
-        target = package(scan(script, plugin_paths=[source]), root / 'delivery')
+        with patch('gizmo.default_paths', return_value=[source]):
+            target = package(scan(script), root / 'delivery')
         moved = root / '中文 moved package'
         target.rename(moved)
         assert root.resolve() in source.resolve().parents

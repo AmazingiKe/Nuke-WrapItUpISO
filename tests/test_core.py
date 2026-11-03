@@ -130,7 +130,8 @@ Write {
     def test_command_blocks_and_builtin_warning_noise(self):
         names='Retime Colorspace Input Remove Keyer Expression ShuffleCopy Output Cryptomatte Multiply Keymix HueCorrect Copy Denoise2 Defocus AddChannels Invert Grain2 ColorLookup NoTimeBlur AdjBBox CopyBBox STMap TimeBlur'.split()
         self.script.write_text('define_window_layout_xml {\n <layout>fake</layout>\n}\nadd_layer {rgba red green blue alpha}\n' + ''.join(f'{cls} {{\n name {cls}1\n}}\n' for cls in names) + 'MyCustom {\n name one\n}\nMyCustom {\n name two\n}\n')
-        plan=scan(self.script)
+        with patch('gizmo.default_paths', return_value=[]):
+            plan=scan(self.script)
         self.assertEqual(len(plan.warnings),2)
         self.assertIn('MyCustom × 2',' '.join(plan.warnings))
         self.assertNotIn('define_window_layout_xml',' '.join(plan.warnings))

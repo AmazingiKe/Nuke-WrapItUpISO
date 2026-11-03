@@ -113,7 +113,9 @@ class Plan:
     plugin_errors: list = field(default_factory=list)
     documents: dict = field(default_factory=dict)
     search_paths: list = field(default_factory=list)
+    plugin_search_errors: list = field(default_factory=list)
     base: Path | None = None
+    automatic_plugins: bool = False
     @property
     def size(self):
         return sum(p.stat().st_size for p in {p for a in self.assets for p in a.files}) + sum(
@@ -121,7 +123,8 @@ class Plan:
 
     @property
     def plugin_blockers(self):
-        return self.plugin_errors + [f'{p.name}：{p.status}；{p.note}' for p in self.plugins if p.status != '就绪']
+        return self.plugin_errors + [f'{p.name}：{p.status}；{p.note}' for p in self.plugins
+                                    if p.status != '就绪' and not (self.automatic_plugins and p.status == '未找到')]
 
 def read_script(path):
     data = path.read_bytes()
@@ -194,10 +197,11 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)),base=base)
 
 
-def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, plugin_paths=None, plugin_overrides=None):
+def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False):
     from gizmo import scan_dependencies
     plan = _scan_media(path, cancel, progress)
-    scan_dependencies(plan, plugin_paths, plugin_overrides or {}, cancel, progress)
+    plan.automatic_plugins = automatic_plugins
+    scan_dependencies(plan, cancel, progress)
     return plan
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None):

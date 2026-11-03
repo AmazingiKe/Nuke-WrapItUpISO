@@ -140,14 +140,13 @@ def code_dependencies(text):
     return list(dict.fromkeys(reasons))
 
 
-def scan_dependencies(plan, paths, overrides, cancel, progress):
+def scan_dependencies(plan, cancel, progress):
     from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs
+    from plugin_paths import discover_paths
     plan.warnings.append('已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。')
-    roots = list(paths) if paths is not None else default_paths()
+    roots = default_paths()
     # A missing default ~/.nuke is normal on a clean machine.
-    if paths is None:
-        roots = [p for p in roots if p != Path.home() / '.nuke' or p.exists()]
-    plan.search_paths = [str(Path(p).expanduser().resolve()) for p in roots]
+    roots = [p for p in roots if p != Path.home() / '.nuke' or p.exists()]
     found, active, custom_knobs = {}, [], {}
     plan.documents[str(plan.script)] = (plan.text, plan.encoding, hashlib.sha256(plan.text.encode(plan.encoding)).hexdigest())
 
@@ -160,7 +159,12 @@ def scan_dependencies(plan, paths, overrides, cancel, progress):
     root_references = list(references(plan.text))
     if not root_references:
         return
+    discovered = discover_paths(roots, cancel, progress)
+    roots = discovered.paths
+    plan.search_paths = [str(p) for p in roots]
     index, index_errors = index_plugins(roots, cancel, progress)
+    index_errors.extend(discovered.errors)
+    plan.plugin_search_errors = index_errors
 
     def visit(name, owner):
         if cancel():
@@ -184,30 +188,25 @@ def scan_dependencies(plan, paths, overrides, cancel, progress):
             return
         candidates = index.get(name.casefold(), [])
         plugin.candidates = [str(p) for p in candidates]
-        chosen = overrides.get(name)
-        if chosen:
-            source = Path(chosen).expanduser().resolve()
-            if source.suffix.lower() != '.gizmo' or source.stem.casefold() != name.casefold() or not source.is_file():
-                plugin.status, plugin.note = '待核对', '指定来源必须是存在且与节点同名的 .gizmo 文件'
+        if not candidates:
+            plugin.note = ('未找到对应文件，跳过收集并继续打包；也可能是未收录的内置节点。'
+                           if plan.automatic_plugins else
+                           '未找到对应文件；也可能是未收录的内置节点。')
+            return
+        if any(p.suffix.lower() != '.gizmo' for p in candidates):
+            plugin.status, plugin.note = '待核对', '发现二进制插件，无法证明版本、授权及关联库完整；不自动打包'
+            return
+        try:
+            hashes = {digest_file(p, cancel) for p in candidates}
+        except OSError as error:
+            plugin.status, plugin.note = '待核对', f'插件文件读取失败：{error}'
+            return
+        if len(hashes) != 1:
+            if not plan.automatic_plugins:
+                plugin.status, plugin.note = '同名冲突', '同名文件内容不同'
                 return
-            if str(source) not in plugin.candidates:
-                plugin.candidates.append(str(source))
-        else:
-            if not candidates:
-                plugin.note = '未找到对应文件；也可能是未收录的内置节点。请补充插件目录或指定来源。'
-                return
-            if any(p.suffix.lower() != '.gizmo' for p in candidates):
-                plugin.status, plugin.note = '待核对', '发现二进制插件，无法证明版本、授权及关联库完整；不自动打包'
-                return
-            try:
-                hashes = {digest_file(p, cancel) for p in candidates}
-            except OSError as error:
-                plugin.status, plugin.note = '待核对', f'插件文件读取失败：{error}'
-                return
-            if len(hashes) != 1:
-                plugin.status, plugin.note = '同名冲突', '同名文件内容不同，请选择工程实际使用的来源'
-                return
-            source = candidates[0]
+            plan.warnings.append(f'{name}：同名版本不同，按搜索顺序自动选择 {candidates[0]}')
+        source = candidates[0]
         plugin.source = str(source)
         if len(active) >= 100:
             plugin.status, plugin.note = '待核对', 'Gizmo 嵌套超过 100 层，请检查依赖'
@@ -263,13 +262,14 @@ def scan_dependencies(plan, paths, overrides, cancel, progress):
     while changed:
         changed = False
         for plugin in plan.plugins:
-            children = [name for name in plugin.dependencies if found[name].status != '就绪']
+            children = [name for name in plugin.dependencies if found[name].status != '就绪'
+                        and not (plan.automatic_plugins and found[name].status == '未找到')]
             if plugin.status == '就绪' and children:
                 plugin.status = '待核对'
                 plugin.note = '内部插件依赖未解决：' + '、'.join(children)
                 changed = True
     if plan.plugins:
-        plan.plugin_errors.extend(index_errors)
+        (plan.warnings if plan.automatic_plugins else plan.plugin_errors).extend(index_errors)
         plan.plugin_errors.extend(code_dependencies(plan.text))
     for plugin in plan.plugins:
         if plugin.status != '就绪':
@@ -293,6 +293,11 @@ def finish_bundle(plan, stage, edits, hashes, cancel):
         for plugin in plan.plugins:
             if cancel():
                 raise Cancelled()
+            if plugin.status != '就绪':
+                records.append({'name': plugin.name, 'source': plugin.source, 'packed_path': None,
+                                'status': '未收集', 'note': plugin.note, 'dependencies': plugin.dependencies,
+                                'used_by': plugin.used_by, 'candidates': plugin.candidates})
+                continue
             text, encoding, _ = plan.documents[plugin.source]
             for start, end, value in sorted(edits.get(plugin.source, []), reverse=True):
                 text = text[:start] + value + text[end:]
@@ -311,7 +316,8 @@ def finish_bundle(plan, stage, edits, hashes, cancel):
     for path in stage.rglob('*'):
         if path.is_file() and path.name != 'PACKAGING_INCOMPLETE.txt':
             hashes[path.relative_to(stage).as_posix()] = digest_file(path, cancel)
-    return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers,
+    return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers
+            and not plan.plugin_search_errors and all(p.status == '就绪' for p in plan.plugins),
             'plugin_search_paths': plan.search_paths, 'file_hashes': hashes,
             'nuke_runtime_verified': False}
 

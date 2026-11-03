@@ -19,6 +19,9 @@ class GizmoTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.plugins = self.root / 'plugins'
         self.plugins.mkdir()
+        defaults = patch('gizmo.default_paths', return_value=[self.plugins])
+        self.default_paths = defaults.start()
+        self.addCleanup(defaults.stop)
         self.script = self.root / 'shot.nk'
         self.script.write_text('Root {\n}\nOuter {\n name Outer1\n}\n', encoding='utf-8')
 
@@ -29,7 +32,7 @@ class GizmoTests(unittest.TestCase):
         return path
 
     def scan(self, **kwargs):
-        return scan(self.script, plugin_paths=[self.plugins], **kwargs)
+        return scan(self.script, **kwargs)
 
     def test_nested_gizmos_and_internal_media_are_packaged_and_verified(self):
         media = self.root / 'texture.exr'
@@ -60,16 +63,13 @@ class GizmoTests(unittest.TestCase):
             package(plan, self.root / 'output')
         self.assertFalse((self.root / 'output').exists())
 
-    def test_conflicting_versions_require_explicit_choice(self):
+    def test_conflicting_versions_are_reported_in_strict_validation(self):
         self.gizmo('Outer')
         other = self.gizmo('Outer', 'Blur {\n name blur\n}\n', self.plugins / 'other')
         plan = self.scan()
         self.assertEqual(plan.plugins[0].status, '同名冲突')
         with self.assertRaises(RuntimeError):
             package(plan, self.root / 'output')
-        plan = self.scan(plugin_overrides={'Outer': other})
-        self.assertEqual(plan.plugins[0].source, str(other))
-        self.assertEqual(plan.plugins[0].status, '就绪')
 
     def test_identical_duplicates_are_safe_but_changed_sources_are_blocked(self):
         first = self.gizmo('Outer')
@@ -161,24 +161,23 @@ class GizmoTests(unittest.TestCase):
                 path.write_text(text)
                 self.assertTrue(self.scan().plugin_blockers)
 
-    def test_cli_failure_and_explicit_source_resolution(self):
+    def test_cli_automatically_resolves_sources_and_reports_missing(self):
         command = [sys.executable, '-B', str(Path(__file__).resolve().parents[1] / 'cli.py'),
-                   str(self.script), '--plugin-dir', str(self.plugins)]
-        result = subprocess.run(command + ['--scan'], capture_output=True)
-        self.assertEqual(result.returncode, 1)
+                   str(self.script)]
+        environment = dict(os.environ, NUKE_PATH=str(self.plugins), USERPROFILE=str(self.root))
+        result = subprocess.run(command + ['--scan'], capture_output=True, env=environment)
+        self.assertEqual(result.returncode, 0)
         chosen = self.gizmo('Outer')
         self.gizmo('Outer', 'Blur {\n name blur\n}\n', self.plugins / 'other')
-        result = subprocess.run(command + ['--gizmo', f'Outer={chosen}', '-o', str(self.root / 'cli')], capture_output=True)
+        result = subprocess.run(command + ['-o', str(self.root / 'cli')], capture_output=True, env=environment)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(len(list((self.root / 'cli').rglob('Outer.gizmo'))), 1)
 
-    def test_unreadable_search_path_and_invalid_override_are_reported(self):
+    def test_unreadable_search_path_is_reported(self):
         self.gizmo('Outer')
-        plan = scan(self.script, plugin_paths=[self.plugins, self.root / 'missing'])
+        self.default_paths.return_value = [self.plugins, self.root / 'missing']
+        plan = self.scan()
         self.assertTrue(plan.plugin_errors)
-        for override in [self.root / 'missing.gizmo', self.plugins / 'Another.gizmo']:
-            plan = self.scan(plugin_overrides={'Outer': override})
-            self.assertEqual(plan.plugins[0].status, '待核对')
 
     def test_case_collisions_and_ofx_classes_are_not_silently_dropped(self):
         self.gizmo('Outer')

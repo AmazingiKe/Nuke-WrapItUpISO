@@ -9,7 +9,7 @@ from tkinter.scrolledtext import ScrolledText
 
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from core import Cancelled, DependencyError, package, scan
-from gizmo import Plugin, default_paths
+from gizmo import Plugin
 from app_version import VERSION
 from project_picker import ask_projects
 
@@ -41,6 +41,9 @@ def brief_asset_summary(plan):
     if plan.plugins:
         ready = sum(p.status == '就绪' for p in plan.plugins)
         parts.append(f'Gizmo {ready}/{len(plan.plugins)} 项就绪')
+        missing = sum(p.status == '未找到' for p in plan.plugins)
+        if plan.automatic_plugins and missing:
+            parts.append(f'跳过缺失插件 {missing} 项')
     for status in ('缺失', '缺帧', '待处理'):
         count = sum(asset.status == status for asset in plan.assets)
         if count:
@@ -163,13 +166,11 @@ class CombinedProgress(tk.Canvas):
 
 
 class Worker(threading.Thread):
-    def __init__(self, paths, output, events, plugin_paths=None, plugin_overrides=None):
+    def __init__(self, paths, output, events):
         super().__init__(daemon=False)
         self.paths = paths
         self.output = output
         self.events = events
-        self.plugin_paths = plugin_paths
-        self.plugin_overrides = plugin_overrides or {}
         self.cancelled = threading.Event()
         self.last_progress = None
         self.last_progress_time = 0
@@ -217,13 +218,9 @@ class Worker(threading.Thread):
                 self.emit('project_state', path, '扫描中')
                 self.report_progress('读取工程', 0, 0, path.name)
                 try:
-                    options = {}
-                    if self.plugin_paths is not None:
-                        options['plugin_paths'] = self.plugin_paths
-                    if self.plugin_overrides.get(path):
-                        options['plugin_overrides'] = self.plugin_overrides[path]
                     plan = scan(path, self.cancelled.is_set,
-                                progress=lambda *values: self.report_progress('扫描素材与插件', *values), **options)
+                                progress=lambda *values: self.report_progress('扫描素材与插件', *values),
+                                automatic_plugins=True)
                     self.report_progress('统计素材', 0, 0, path.name)
                     size = plan.size
                     if self.cancelled.is_set():
@@ -270,8 +267,6 @@ class Window(TkinterDnD.Tk):
         self.plans = {}
         self.project_errors = {}
         self.asset_rows = {}
-        self.plugin_paths = None
-        self.plugin_overrides = {}
         self.last_project_directory = None
         self.worker = None
         self.events = Queue()
@@ -342,11 +337,9 @@ class Window(TkinterDnD.Tk):
             ('add', '添加工程 / 文件夹', self.choose_projects),
             ('clear', '清空工程列表', self.clear),
             ('scan', '扫描素材与插件', self.scan_only),
-            ('folder', '插件目录', self.configure_plugins),
-            ('link', '指定插件来源', self.choose_plugin_source),
             ('pack', '开始打包', self.pack),
         ]):
-            if index in (2, 5):
+            if index in (2, 3):
                 ttk.Separator(self.toolbar, orient='vertical').pack(side='left', fill='y', padx=6, pady=5)
             button = tool_button(icon, command)
             self.controls.append(button)
@@ -503,67 +496,11 @@ class Window(TkinterDnD.Tk):
         if path:
             self.output.set(path)
 
-    def configure_plugins(self):
-        if self.busy():
-            return
-        dialog = tk.Toplevel(self)
-        dialog.title('插件搜索目录')
-        dialog.geometry('700x330')
-        dialog.transient(self)
-        ttk.Label(dialog, text='递归查找 Gizmo；同名不同内容时需指定来源。修改后请重新扫描。').pack(anchor='w', padx=12, pady=12)
-        listing = tk.Listbox(dialog, selectmode='extended')
-        listing.pack(fill='both', expand=True, padx=12)
-        for path in self.plugin_paths if self.plugin_paths is not None else default_paths():
-            listing.insert('end', str(path))
-        buttons = ttk.Frame(dialog, padding=12)
-        buttons.pack(fill='x')
-        def add():
-            path = filedialog.askdirectory(parent=dialog, title='添加插件搜索目录')
-            if path and path not in listing.get(0, 'end'):
-                listing.insert('end', path)
-        def remove():
-            for index in reversed(listing.curselection()):
-                listing.delete(index)
-        def save():
-            self.plugin_paths = list(listing.get(0, 'end'))
-            self.invalidate_scans()
-            dialog.destroy()
-        for label, command in [('添加目录', add), ('移除选中', remove), ('保存', save)]:
-            ttk.Button(buttons, text=label, command=command).pack(side='left', padx=4)
-        dialog.grab_set()
-
-    def invalidate_scans(self):
-        self.plans.clear()
-        self.project_errors.clear()
-        for path in self.paths:
-            self.project_table.item(str(path), values=(path.name, '待重新扫描', '—'))
-        self.update_project_count()
-        self.render_selected_project()
-
-    def choose_plugin_source(self):
-        if self.busy():
-            return
-        selection = self.table.selection()
-        plugin = self.asset_rows.get(selection[0]) if selection else None
-        projects = self.project_table.selection()
-        if not projects or not isinstance(plugin, Plugin):
-            messagebox.showinfo('指定插件来源', '先扫描工程，再在右侧选中一个插件条目。', parent=self)
-            return
-        source = filedialog.askopenfilename(parent=self, title=f'选择 {plugin.name}.gizmo 的实际来源',
-                                          filetypes=[('Gizmo', '*.gizmo')])
-        if source:
-            if Path(source).stem.casefold() != plugin.name.casefold():
-                messagebox.showerror('插件名称不一致', f'请选择 {plugin.name}.gizmo。', parent=self)
-                return
-            self.plugin_overrides.setdefault(Path(projects[0]), {})[plugin.name] = source
-            self.invalidate_scans()
-            self.append_log(f'已指定 {plugin.name} 的来源，请重新扫描。')
 
     def clear(self):
         if self.busy():
             return
         self.paths.clear()
-        self.plugin_overrides.clear()
         self.plans.clear()
         self.project_errors.clear()
         self.project_table.delete(*self.project_table.get_children())
@@ -603,8 +540,7 @@ class Window(TkinterDnD.Tk):
         for control in self.controls + [self.choose, self.output_entry]:
             control.state(['disabled'])
         self.cancel.state(['!disabled'])
-        self.worker = Worker(self.paths.copy(), output, self.events, self.plugin_paths,
-                             {p: dict(v) for p, v in self.plugin_overrides.items()})
+        self.worker = Worker(self.paths.copy(), output, self.events)
         self.worker.start()
 
     def poll_events(self):
@@ -688,10 +624,12 @@ class Window(TkinterDnD.Tk):
                 lines = [(f'插件状态：{asset.status} · {asset.name}', level),
                          (asset.note, level), (f'来源：{asset.source or "尚未确定"}', 'info')]
                 if asset.status != '就绪':
-                    lines.append(('此依赖未解决，工程不能打包。', 'warning'))
-                    if asset.status in {'同名冲突', '未找到'}:
-                        lines.append(('补充插件目录或点击“指定插件来源”，然后重新扫描。', 'info'))
+                    if cached and cached[0].automatic_plugins and asset.status == '未找到':
+                        lines.append(('此插件将跳过收集，其余内容继续打包。', 'warning'))
+                    elif asset.status in {'同名冲突', '未找到'}:
+                        lines.append(('此依赖未解决，工程不能打包。', 'warning'))
                     else:
+                        lines.append(('此依赖未解决，工程不能打包。', 'warning'))
                         lines.append(('请按上方原因处理内部素材、脚本或插件依赖，然后重新扫描。', 'info'))
                 lines.extend((f'候选：{candidate}', 'info') for candidate in asset.candidates)
                 lines.extend((f'引用位置：{owner}', 'info') for owner in asset.used_by)
@@ -736,6 +674,7 @@ class Window(TkinterDnD.Tk):
                     lines.append((error, 'error'))
                 lines.append((f'插件与外部依赖：{len(plan.plugins)} 项 · 待处理 {len(plan.plugin_blockers)} 项',
                               'warning' if plan.plugin_blockers else 'info'))
+                lines.append((f'已自动搜索 {len(plan.search_paths)} 个插件目录', 'info'))
                 lines.extend((warning, 'warning') for warning in plan.warnings)
                 lines.append((f'工程：{path}', 'info'))
         self.dependencies.configure(state='normal')

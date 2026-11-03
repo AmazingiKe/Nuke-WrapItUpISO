@@ -22,11 +22,6 @@ def render(name, color):
     elif name == 'scan':
         draw.ellipse((3*SCALE,3*SCALE,12*SCALE,12*SCALE), outline=color, width=6)
         line([(11,11),(17,17)])
-    elif name == 'folder':
-        line([(3,16),(3,4),(8,4),(10,6),(17,6),(17,16),(3,16)])
-    elif name == 'link':
-        draw.rounded_rectangle((2*SCALE,7*SCALE,11*SCALE,13*SCALE), radius=3*SCALE, outline=color, width=6)
-        draw.rounded_rectangle((9*SCALE,7*SCALE,18*SCALE,13*SCALE), radius=3*SCALE, outline=color, width=6)
     elif name == 'pack':
         line([(6,3),(16,10),(6,17),(6,3)])
     elif name == 'stop':
@@ -35,6 +30,6 @@ def render(name, color):
 
 if __name__ == '__main__':
     OUT.mkdir(parents=True, exist_ok=True)
-    for name in ('add','clear','scan','folder','link','pack','stop'):
+    for name in ('add','clear','scan','pack','stop'):
         for suffix, color in (('', '#334155'), ('_disabled', '#a1a1aa')):
             render(name, color).save(OUT / f'{name}{suffix}.png')
