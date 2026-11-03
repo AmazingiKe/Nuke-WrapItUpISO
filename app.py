@@ -308,16 +308,17 @@ class Window(TkinterDnD.Tk):
         table_frame.pack(fill='both', expand=True)
         table_frame.rowconfigure(0, weight=1)
         table_frame.columnconfigure(0, weight=1)
-        columns = ('node', 'knob', 'path', 'status', 'files', 'note')
+        columns = ('node', 'type', 'path', 'files', 'status')
         self.table = ttk.Treeview(table_frame, columns=columns, show='headings', height=4, selectmode='browse')
         self.table.bind('<<TreeviewSelect>>', self.show_item_status)
         self.table.bind('<Button-1>', self.clear_asset_selection_on_blank)
         for column, heading, width in zip(
-            columns, ['节点', '参数', '原路径', '状态', '文件数', '说明'],
-            [100, 70, 240, 70, 60, 180],
+            columns, ['节点', '类型', '原路径', '文件数', '状态'],
+            [120, 75, 390, 65, 65],
         ):
             self.table.heading(column, text=heading)
-            self.table.column(column, width=width, minwidth=55)
+            self.table.column(column, width=width, minwidth=55, stretch=column == 'path',
+                              anchor='center' if column in {'type', 'files', 'status'} else 'w')
         vertical = ttk.Scrollbar(table_frame, orient='vertical', command=self.table.yview)
         horizontal = ttk.Scrollbar(table_frame, orient='horizontal', command=self.table.xview)
         self.table.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
@@ -574,13 +575,13 @@ class Window(TkinterDnD.Tk):
                 plan, _ = cached
                 for asset in plan.assets:
                     row = self.table.insert('', 'end', values=(
-                        asset.node, asset.knob, asset.raw, asset.status, len(asset.files), asset.note,
+                        asset.node, '素材', asset.raw, len(asset.files), '√' if asset.status == '就绪' else '×',
                     ))
                     self.asset_rows[row] = asset
                 for plugin in plan.plugins:
                     row = self.table.insert('', 'end', values=(
-                        plugin.name, 'Gizmo / 插件', plugin.source or '；'.join(plugin.candidates),
-                        plugin.status, 1 if plugin.source else 0, plugin.note,
+                        plugin.name, '插件', plugin.source or '；'.join(plugin.candidates),
+                        1 if plugin.source else 0, '√' if plugin.status == '就绪' else '×',
                     ))
                     self.asset_rows[row] = plugin
         self.show_item_status()
