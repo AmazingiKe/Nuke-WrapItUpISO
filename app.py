@@ -233,12 +233,13 @@ class Window(TkinterDnD.Tk):
         self.progress.pack(fill='x', pady=(12, 4))
         ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
         ttk.Label(footer, text='日志').pack(anchor='w', pady=(8, 4))
-        self.log = ScrolledText(footer, height=5, wrap='word', state='disabled',
-                                font=('Microsoft YaHei UI', 10), padx=8, pady=6,
-                                spacing1=2, spacing3=4)
-        for level, color in [('info', '#334155'), ('success', '#16703c'),
-                             ('warning', '#985c00'), ('error', '#b42318')]:
-            self.log.tag_configure(level, foreground=color)
+        self.log = ScrolledText(footer, height=5, wrap='word', state='disabled')
+        for view in (self.dependencies, self.log):
+            view.configure(font=('Microsoft YaHei UI', 10), padx=8, pady=6,
+                           spacing1=2, spacing3=4)
+            for level, color in [('info', '#334155'), ('success', '#16703c'),
+                                 ('warning', '#985c00'), ('error', '#b42318')]:
+                view.tag_configure(level, foreground=color)
         self.log.pack(fill='x')
 
     def busy(self):
@@ -420,7 +421,7 @@ class Window(TkinterDnD.Tk):
     def show_item_status(self, event=None):
         selection = self.project_table.selection()
         if not selection:
-            text = '选择左侧工程，再点击素材查看状态；未选中素材时显示工程与插件依赖提示。'
+            lines = [('请选择左侧工程。', 'info'), ('点击素材，可查看详细状态。', 'info')]
         else:
             path = Path(selection[0])
             status = self.project_table.set(selection[0], 'status')
@@ -431,30 +432,48 @@ class Window(TkinterDnD.Tk):
             if asset is not None:
                 default_notes = {'就绪': '素材文件已找到。', '缺失': '未找到匹配的素材文件。',
                                  '缺帧': '序列存在缺帧，请核对声明的帧范围。', '待处理': '需人工核对路径或表达式。'}
-                text = (f'素材状态：{asset.status} · 文件数：{len(asset.files)}\n'
-                        f'节点：{asset.node} · 参数：{asset.knob}\n'
-                        f'原路径：{asset.raw}\n解析路径：{asset.source or "尚未解析"}\n'
-                        f'说明：{asset.note or default_notes.get(asset.status, "请核对素材状态。")}')
+                level = 'success' if asset.status == '就绪' else ('error' if asset.status == '缺失' else 'warning')
+                lines = [
+                    (f'素材状态：{asset.status} · 文件数：{len(asset.files)}', level),
+                    (f'说明：{asset.note or default_notes.get(asset.status, "请核对素材状态。")}', level),
+                ]
                 if asset.missing:
                     frames = ', '.join(str(frame) for frame in asset.missing[:50])
-                    text += f'\n缺帧（共 {len(asset.missing)} 帧）：{frames}'
+                    missing_text = f'缺帧（共 {len(asset.missing)} 帧）：{frames}'
                     if len(asset.missing) > 50:
-                        text += '…（仅显示前 50 帧）'
+                        missing_text += '…（仅显示前 50 帧）'
+                    lines.append((missing_text, 'warning'))
                 if error:
-                    text += f'\n工程处理失败：{error}'
+                    lines.append((f'工程处理失败：{error}', 'error'))
+                lines.extend([
+                    (f'节点：{asset.node} · 参数：{asset.knob}', 'info'),
+                    (f'原路径：{asset.raw}', 'info'),
+                    (f'解析路径：{asset.source or "尚未解析"}', 'info'),
+                ])
             elif cached is None:
-                text = f'工程：{path}\n{error or status}'
+                lines = [(f'工程状态：{status}', 'error' if error else 'info')]
+                if error:
+                    lines.append((error, 'error'))
                 if not error:
-                    text += '\n点击“扫描素材”查看素材与插件依赖提示。'
+                    lines.append(('点击“扫描素材”查看依赖。', 'info'))
+                lines.append((f'工程：{path}', 'info'))
             else:
                 plan, size = cached
                 issues = sum(asset.status != '就绪' for asset in plan.assets)
-                text = (f'工程：{path}\n'
-                        f'{error or status} · {len(plan.assets)} 项素材引用 · 需核对 {issues} 项 · {size / 1048576:.1f} MiB\n'
-                        '插件与外部依赖（需人工核对）：\n' + '\n'.join(plan.warnings))
+                lines = [
+                    (f'工程状态：{status}', 'error' if error else ('warning' if needs_review(plan) else 'info')),
+                    (f'{len(plan.assets)} 项素材 · 需核对 {issues} 项 · {size / 1048576:.1f} MiB', 'warning' if issues else 'info'),
+                ]
+                if error:
+                    lines.append((error, 'error'))
+                lines.append(('插件与外部依赖：需人工核对', 'warning'))
+                lines.extend((warning, 'warning') for warning in plan.warnings)
+                lines.append((f'工程：{path}', 'info'))
         self.dependencies.configure(state='normal')
         self.dependencies.delete('1.0', 'end')
-        self.dependencies.insert('end', text)
+        for text, level in lines:
+            self.dependencies.insert('end', text + '\n', (level,))
+        self.dependencies.yview_moveto(0)
         self.dependencies.configure(state='disabled')
 
     def show_project(self, index, total, name):
