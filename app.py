@@ -295,8 +295,7 @@ class Window(TkinterDnD.Tk):
         style.configure('Title.TLabel', font=('Microsoft YaHei UI', 20, 'bold'))
         style.configure('Tagline.TLabel', font=('Segoe UI', 11, 'bold'))
         style.configure('TButton', padding=(10, 6))
-        style.configure('Tool.TButton', padding=(8, 7), font=('Segoe MDL2 Assets', 14))
-        style.configure('Add.Tool.TButton', font=('Segoe UI', 14))
+        style.configure('Tool.TButton', padding=0, anchor='center')
         style.configure('Treeview', rowheight=27)
         root = ttk.Frame(self, padding=16)
         root.pack(fill='both', expand=True)
@@ -317,25 +316,44 @@ class Window(TkinterDnD.Tk):
         self.toolbar.pack(fill='x', pady=(10, 6))
         self.controls = []
         self.tooltips = []
-        for index, (symbol, label, command) in enumerate([
-            ('+', '添加工程 / 文件夹', self.choose_projects),
-            ('\ue74d', '清空工程列表', self.clear),
-            ('\ue721', '扫描素材与插件', self.scan_only),
-            ('\ue8b7', '插件目录', self.configure_plugins),
-            ('\ue71b', '指定插件来源', self.choose_plugin_source),
-            ('\ue768', '开始打包', self.pack),
+        self.toolbar_images = []
+        scale = float(self.tk.call('tk', 'scaling')) / (96 / 72)
+        button_size, icon_size = round(32 * scale), round(20 * scale)
+
+        def tool_button(icon, command, side='left'):
+            # Pixel-sized slots keep every button square, regardless of image metrics.
+            slot = ttk.Frame(self.toolbar, width=button_size, height=button_size)
+            slot.pack(side=side, padx=(0, 4) if side == 'left' else 0)
+            slot.pack_propagate(False)
+            images = []
+            for suffix in ('', '_disabled'):
+                path = Path(__file__).parent / 'assets' / 'toolbar' / f'{icon}{suffix}.png'
+                bitmap = tk.PhotoImage(master=self, file=str(path))
+                if icon_size != 20:
+                    bitmap = bitmap.zoom(icon_size).subsample(20)
+                images.append(bitmap)
+            self.toolbar_images.extend(images)
+            button = ttk.Button(slot, image=(images[0], 'disabled', images[1]),
+                                command=command, style='Tool.TButton')
+            button.pack(fill='both', expand=True)
+            return button
+
+        for index, (icon, label, command) in enumerate([
+            ('add', '添加工程 / 文件夹', self.choose_projects),
+            ('clear', '清空工程列表', self.clear),
+            ('scan', '扫描素材与插件', self.scan_only),
+            ('folder', '插件目录', self.configure_plugins),
+            ('link', '指定插件来源', self.choose_plugin_source),
+            ('pack', '开始打包', self.pack),
         ]):
             if index in (2, 5):
                 ttk.Separator(self.toolbar, orient='vertical').pack(side='left', fill='y', padx=6, pady=5)
-            button = ttk.Button(self.toolbar, text=symbol, width=2, command=command,
-                                style='Add.Tool.TButton' if index == 0 else 'Tool.TButton')
-            button.pack(side='left', padx=(0, 4))
+            button = tool_button(icon, command)
             self.controls.append(button)
             self.tooltips.append(ToolTip(button, label))
         self.add_project_button = self.controls[0]
-        self.cancel = ttk.Button(self.toolbar, text='\ue71a', width=2, style='Tool.TButton',
-                                 command=self.stop, state='disabled')
-        self.cancel.pack(side='right')
+        self.cancel = tool_button('stop', self.stop, side='right')
+        self.cancel.state(['disabled'])
         self.tooltips.append(ToolTip(self.cancel, '取消当前任务'))
         self.panes = ttk.Panedwindow(root, orient='horizontal')
         self.panes.pack(fill='both', expand=True)

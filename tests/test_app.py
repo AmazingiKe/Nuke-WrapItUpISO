@@ -116,7 +116,7 @@ class WindowTests(unittest.TestCase):
         labels = [str(button.cget('text')) for button in self.window.controls]
         self.assertNotIn('添加工程', labels)
         self.assertNotIn('添加文件夹', labels)
-        self.assertEqual(self.window.add_project_button.cget('text'), '+')
+        self.assertTrue(self.window.add_project_button.cget('image'))
         with patch('app.ask_projects', return_value=[]):
             self.window.choose_projects()
         self.assertEqual(len(self.window.paths), 3)
