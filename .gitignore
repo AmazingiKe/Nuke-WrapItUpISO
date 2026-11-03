@@ -15,6 +15,7 @@ dist/
 
 # Local agent settings
 .codex/
+/AGENTS.md
 
 # Editor and operating system files
 .idea/
