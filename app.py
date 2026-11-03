@@ -287,16 +287,14 @@ class Window(TkinterDnD.Tk):
         style = ttk.Style(self)
         if 'vista' in style.theme_names():
             style.theme_use('vista')
-        style.configure('Title.TLabel', font=('Microsoft YaHei UI', 20, 'bold'))
         style.configure('Tagline.TLabel', font=('Segoe UI', 11, 'bold'))
         style.configure('TButton', padding=(10, 6))
         style.configure('Tool.TButton', padding=0, anchor='center')
         style.configure('Treeview', rowheight=27)
         root = ttk.Frame(self, padding=16)
         root.pack(fill='both', expand=True)
-        ttk.Label(root, text='Nuke 批量打包器', style='Title.TLabel').pack(anchor='w')
         ttk.Label(root, text='Fuck Vendor Nuke Pack. One Click, No Bullshit.',
-                  style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(6, 16))
+                  style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(0, 16))
         output_row = ttk.Frame(root)
         output_row.pack(fill='x')
         ttk.Label(output_row, text='输出目录').pack(side='left', padx=(0, 8))
