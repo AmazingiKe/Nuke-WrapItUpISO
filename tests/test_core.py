@@ -114,7 +114,7 @@ Write {
         self.script.write_text('define_window_layout_xml {\n <layout>fake</layout>\n}\nadd_layer {rgba red green blue alpha}\n' + ''.join(f'{cls} {{\n name {cls}1\n}}\n' for cls in names) + 'MyCustom {\n name one\n}\nMyCustom {\n name two\n}\n')
         plan=scan(self.script)
         self.assertEqual(len(plan.warnings),2)
-        self.assertIn('MyCustom × 2',plan.warnings[0])
+        self.assertIn('MyCustom × 2',' '.join(plan.warnings))
         self.assertNotIn('define_window_layout_xml',' '.join(plan.warnings))
         self.assertEqual(plan.assets,[])
     def test_read_only_source_cancel_and_write_permissions(self):
@@ -125,7 +125,7 @@ Write {
             copied=next(p for p in (target/'media').rglob('image.0001.exr') if p.read_bytes()==b'different')
             self.assertTrue(copied.stat().st_mode & stat.S_IWUSR)
             with self.assertRaises(Cancelled): package(plan,self.root/'cancelled',lambda:True)
-            self.assertEqual(list((self.root/'cancelled').iterdir()),[])
+            self.assertFalse(any((self.root/'cancelled').glob('*')))
         finally: source.chmod(stat.S_IWRITE|stat.S_IREAD)
 
 if __name__=='__main__': unittest.main()

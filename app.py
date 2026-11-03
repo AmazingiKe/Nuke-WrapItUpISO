@@ -8,11 +8,14 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
-from core import Cancelled, package, scan
+from core import Cancelled, DependencyError, package, scan
+from gizmo import Plugin, default_paths
 from app_version import VERSION
 
 
 def readable_error(error):
+    if isinstance(error, DependencyError):
+        return '插件或文件校验未通过，请查看右侧状态'
     if isinstance(error, FileExistsError):
         return '输出已存在，请更换输出目录'
     if isinstance(error, FileNotFoundError):
@@ -29,11 +32,14 @@ def readable_error(error):
 
 
 def needs_review(plan):
-    return any(asset.status != '就绪' for asset in plan.assets) or len(plan.warnings) > 1
+    return bool(plan.plugin_blockers) or any(asset.status != '就绪' for asset in plan.assets) or len(plan.warnings) > 1
 
 
 def brief_asset_summary(plan):
     parts = [f'{len(plan.assets)} 项素材']
+    if plan.plugins:
+        ready = sum(p.status == '就绪' for p in plan.plugins)
+        parts.append(f'Gizmo {ready}/{len(plan.plugins)} 项就绪')
     for status in ('缺失', '缺帧', '待处理'):
         count = sum(asset.status == status for asset in plan.assets)
         if count:
@@ -44,11 +50,13 @@ def brief_asset_summary(plan):
 
 
 class Worker(threading.Thread):
-    def __init__(self, paths, output, events):
+    def __init__(self, paths, output, events, plugin_paths=None, plugin_overrides=None):
         super().__init__(daemon=False)
         self.paths = paths
         self.output = output
         self.events = events
+        self.plugin_paths = plugin_paths
+        self.plugin_overrides = plugin_overrides or {}
         self.cancelled = threading.Event()
         self.last_progress = None
         self.last_progress_time = 0
@@ -80,8 +88,13 @@ class Worker(threading.Thread):
                 self.emit('project_state', path, '扫描中')
                 self.report_progress('读取工程', 0, 0, path.name)
                 try:
+                    options = {}
+                    if self.plugin_paths is not None:
+                        options['plugin_paths'] = self.plugin_paths
+                    if self.plugin_overrides.get(path):
+                        options['plugin_overrides'] = self.plugin_overrides[path]
                     plan = scan(path, self.cancelled.is_set,
-                                progress=lambda *values: self.report_progress('扫描节点', *values))
+                                progress=lambda *values: self.report_progress('扫描素材与插件', *values), **options)
                     self.report_progress('统计素材', 0, 0, path.name)
                     size = plan.size
                     if self.cancelled.is_set():
@@ -95,7 +108,7 @@ class Worker(threading.Thread):
                             self.file_copied,
                             byte_progress=lambda *values: self.report_progress('复制素材', *values),
                         )
-                        self.emit('project_state', path, '已打包')
+                        self.emit('project_state', path, '已打包·需核对' if needs_review(plan) else '已打包')
                     action = '打包完成' if self.output else '扫描完成'
                     self.emit('message', f'{action} · {path.name} · {brief_asset_summary(plan)}',
                               'warning' if needs_review(plan) else 'success')
@@ -108,7 +121,7 @@ class Worker(threading.Thread):
                     break
                 except Exception as error:
                     failed += 1
-                    self.emit('project_state', path, '失败', f'{type(error).__name__}: {error}')
+                    self.emit('project_state', path, '依赖待处理' if isinstance(error, DependencyError) else '失败', f'{type(error).__name__}: {error}')
                     self.emit('message', f'失败 · {path.name} · {readable_error(error)}', 'error')
                 self.emit('project_done', completed + failed, len(self.paths))
         finally:
@@ -125,6 +138,8 @@ class Window(TkinterDnD.Tk):
         self.plans = {}
         self.project_errors = {}
         self.asset_rows = {}
+        self.plugin_paths = None
+        self.plugin_overrides = {}
         self.worker = None
         self.events = Queue()
         self.closing = False
@@ -158,7 +173,8 @@ class Window(TkinterDnD.Tk):
         self.controls = []
         for text, command in [
             ('添加工程', self.add_files), ('添加文件夹', self.add_folder),
-            ('清空', self.clear), ('扫描素材', self.scan_only), ('开始打包', self.pack),
+            ('清空', self.clear), ('扫描素材与插件', self.scan_only), ('插件目录', self.configure_plugins),
+            ('指定插件来源', self.choose_plugin_source), ('开始打包', self.pack),
         ]:
             button = ttk.Button(bar, text=text, command=command)
             button.pack(side='left', padx=(0, 8))
@@ -312,10 +328,67 @@ class Window(TkinterDnD.Tk):
         if path:
             self.output.set(path)
 
+    def configure_plugins(self):
+        if self.busy():
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title('插件搜索目录')
+        dialog.geometry('700x330')
+        dialog.transient(self)
+        ttk.Label(dialog, text='递归查找 Gizmo；同名不同内容时需指定来源。修改后请重新扫描。').pack(anchor='w', padx=12, pady=12)
+        listing = tk.Listbox(dialog, selectmode='extended')
+        listing.pack(fill='both', expand=True, padx=12)
+        for path in self.plugin_paths if self.plugin_paths is not None else default_paths():
+            listing.insert('end', str(path))
+        buttons = ttk.Frame(dialog, padding=12)
+        buttons.pack(fill='x')
+        def add():
+            path = filedialog.askdirectory(parent=dialog, title='添加插件搜索目录')
+            if path and path not in listing.get(0, 'end'):
+                listing.insert('end', path)
+        def remove():
+            for index in reversed(listing.curselection()):
+                listing.delete(index)
+        def save():
+            self.plugin_paths = list(listing.get(0, 'end'))
+            self.invalidate_scans()
+            dialog.destroy()
+        for label, command in [('添加目录', add), ('移除选中', remove), ('保存', save)]:
+            ttk.Button(buttons, text=label, command=command).pack(side='left', padx=4)
+        dialog.grab_set()
+
+    def invalidate_scans(self):
+        self.plans.clear()
+        self.project_errors.clear()
+        for path in self.paths:
+            self.project_table.item(str(path), values=(path.name, '待重新扫描', '—'))
+        self.update_project_count()
+        self.render_selected_project()
+
+    def choose_plugin_source(self):
+        if self.busy():
+            return
+        selection = self.table.selection()
+        plugin = self.asset_rows.get(selection[0]) if selection else None
+        projects = self.project_table.selection()
+        if not projects or not isinstance(plugin, Plugin):
+            messagebox.showinfo('指定插件来源', '先扫描工程，再在右侧选中一个插件条目。', parent=self)
+            return
+        source = filedialog.askopenfilename(parent=self, title=f'选择 {plugin.name}.gizmo 的实际来源',
+                                          filetypes=[('Gizmo', '*.gizmo')])
+        if source:
+            if Path(source).stem.casefold() != plugin.name.casefold():
+                messagebox.showerror('插件名称不一致', f'请选择 {plugin.name}.gizmo。', parent=self)
+                return
+            self.plugin_overrides.setdefault(Path(projects[0]), {})[plugin.name] = source
+            self.invalidate_scans()
+            self.append_log(f'已指定 {plugin.name} 的来源，请重新扫描。')
+
     def clear(self):
         if self.busy():
             return
         self.paths.clear()
+        self.plugin_overrides.clear()
         self.plans.clear()
         self.project_errors.clear()
         self.project_table.delete(*self.project_table.get_children())
@@ -356,7 +429,8 @@ class Window(TkinterDnD.Tk):
         for control in self.controls + [self.choose, self.output_entry]:
             control.state(['disabled'])
         self.cancel.state(['!disabled'])
-        self.worker = Worker(self.paths.copy(), output, self.events)
+        self.worker = Worker(self.paths.copy(), output, self.events, self.plugin_paths,
+                             {p: dict(v) for p, v in self.plugin_overrides.items()})
         self.worker.start()
 
     def poll_events(self):
@@ -388,7 +462,7 @@ class Window(TkinterDnD.Tk):
         self.plans[plan.script] = (plan, size)
         self.update_project_count()
         self.project_table.set(str(plan.script), 'assets', len(plan.assets))
-        self.set_project_state(plan.script, '需核对' if any(a.status != '就绪' for a in plan.assets) else '已扫描')
+        self.set_project_state(plan.script, '需核对' if needs_review(plan) else '已扫描')
         if self.project_table.selection() == (str(plan.script),):
             self.render_selected_project()
 
@@ -412,6 +486,12 @@ class Window(TkinterDnD.Tk):
                         asset.node, asset.knob, asset.raw, asset.status, len(asset.files), asset.note,
                     ))
                     self.asset_rows[row] = asset
+                for plugin in plan.plugins:
+                    row = self.table.insert('', 'end', values=(
+                        plugin.name, 'Gizmo / 插件', plugin.source or '；'.join(plugin.candidates),
+                        plugin.status, 1 if plugin.source else 0, plugin.note,
+                    ))
+                    self.asset_rows[row] = plugin
         self.show_item_status()
 
     def clear_asset_selection_on_blank(self, event):
@@ -429,7 +509,21 @@ class Window(TkinterDnD.Tk):
             cached = self.plans.get(path)
             selected_assets = self.table.selection()
             asset = self.asset_rows.get(selected_assets[0]) if selected_assets else None
-            if asset is not None:
+            if isinstance(asset, Plugin):
+                level = 'success' if asset.status == '就绪' else 'warning'
+                lines = [(f'插件状态：{asset.status} · {asset.name}', level),
+                         (asset.note, level), (f'来源：{asset.source or "尚未确定"}', 'info')]
+                if asset.status != '就绪':
+                    lines.append(('此依赖未解决，工程不能打包。', 'warning'))
+                    if asset.status in {'同名冲突', '未找到'}:
+                        lines.append(('补充插件目录或点击“指定插件来源”，然后重新扫描。', 'info'))
+                    else:
+                        lines.append(('请按上方原因处理内部素材、脚本或插件依赖，然后重新扫描。', 'info'))
+                lines.extend((f'候选：{candidate}', 'info') for candidate in asset.candidates)
+                lines.extend((f'引用位置：{owner}', 'info') for owner in asset.used_by)
+                if error:
+                    lines.append((error, 'error'))
+            elif asset is not None:
                 default_notes = {'就绪': '素材文件已找到。', '缺失': '未找到匹配的素材文件。',
                                  '缺帧': '序列存在缺帧，请核对声明的帧范围。', '待处理': '需人工核对路径或表达式。'}
                 level = 'success' if asset.status == '就绪' else ('error' if asset.status == '缺失' else 'warning')
@@ -455,7 +549,7 @@ class Window(TkinterDnD.Tk):
                 if error:
                     lines.append((error, 'error'))
                 if not error:
-                    lines.append(('点击“扫描素材”查看依赖。', 'info'))
+                    lines.append(('点击“扫描素材与插件”查看依赖。', 'info'))
                 lines.append((f'工程：{path}', 'info'))
             else:
                 plan, size = cached
@@ -466,7 +560,8 @@ class Window(TkinterDnD.Tk):
                 ]
                 if error:
                     lines.append((error, 'error'))
-                lines.append(('插件与外部依赖：需人工核对', 'warning'))
+                lines.append((f'插件与外部依赖：{len(plan.plugins)} 项 · 待处理 {len(plan.plugin_blockers)} 项',
+                              'warning' if plan.plugin_blockers else 'info'))
                 lines.extend((warning, 'warning') for warning in plan.warnings)
                 lines.append((f'工程：{path}', 'info'))
         self.dependencies.configure(state='normal')

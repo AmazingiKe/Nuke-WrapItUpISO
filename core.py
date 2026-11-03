@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 class Cancelled(Exception): pass
 
+class DependencyError(RuntimeError): pass
+
 @dataclass
 class Token:
     value: str
@@ -44,7 +46,7 @@ def node_blocks(text):
         line_start = text.rfind('\n', 0, a.start)+1
         if text[line_start:a.start].strip(): continue
         if a.value in {'define_window_layout_xml','add_layer','set','push','version','end_group'}: continue
-        if re.fullmatch(r'[A-Za-z_][\w:]*', a.value) and text[b.start:b.start+1] == '{':
+        if re.fullmatch(r'[A-Za-z_][\w:.-]*', a.value) and text[b.start:b.start+1] == '{':
             yield a.value, b.start+1, b.value
 
 def knobs(body, offset):
@@ -78,7 +80,12 @@ ApplyMaterial BasicMaterial OCIOColorSpace OCIOFileTransform OCIOCDLTransform
 OCIODisplay OCIOLogConvert OCIOLookTransform OCIOColorSpaceTransform
 FrameRange AppendClip Kronos OFlow IDistort Displace SplineWarp3 GridWarp3 LensDistortion2
 UnrealReader DeepMerge DeepToImage DeepFromImage DeepCrop DeepRecolor DeepHoldout
-DeepExpression DeepTransform DeepColorCorrect DeepSample DeepShuffle'''.split())
+DeepExpression DeepTransform DeepColorCorrect DeepSample DeepShuffle
+Gizmo BlinkScript ChannelMerge ClipTest ColorMatrix Difference Log2Lin Matrix
+MergeExpression Noise Position Ramp SoftClip StickyNote CheckerBoard CheckerBoard2
+ColorWheel Text Text2 ColorBars CurveTool Histogram ContactSheet Switch
+Vectorfield VectorDistort VectorGenerator HueShift HSVTool GodRays Glow Flare
+Convolve Median Bilateral Merge EdgeDetect Posterize'''.split())
 
 @dataclass
 class Asset:
@@ -92,6 +99,8 @@ class Asset:
     status: str = ''
     note: str = ''
     missing: list = field(default_factory=list)
+    owner: str = ''
+    node_class: str = ''
 
 @dataclass
 class Plan:
@@ -100,9 +109,19 @@ class Plan:
     encoding: str
     assets: list
     warnings: list
+    plugins: list = field(default_factory=list)
+    plugin_errors: list = field(default_factory=list)
+    documents: dict = field(default_factory=dict)
+    search_paths: list = field(default_factory=list)
+    base: Path | None = None
     @property
     def size(self):
-        return sum(p.stat().st_size for p in {p for a in self.assets for p in a.files})
+        return sum(p.stat().st_size for p in {p for a in self.assets for p in a.files}) + sum(
+            Path(p.source).stat().st_size for p in self.plugins if p.source and p.status == '就绪')
+
+    @property
+    def plugin_blockers(self):
+        return self.plugin_errors + [f'{p.name}：{p.status}；{p.note}' for p in self.plugins if p.status != '就绪']
 
 def read_script(path):
     data = path.read_bytes()
@@ -124,7 +143,7 @@ def resolve(raw, base):
         raise ValueError('project_directory 无法解析，相对素材路径需手动处理')
     return p if p.is_absolute() else base / p
 
-def scan(path, cancel=lambda: False, progress=lambda a,b,c: None):
+def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None):
     path = Path(path).resolve()
     text, enc = read_script(path)
     blocks = [(cls, knobs(body, pos)) for cls, pos, body in node_blocks(text)]
@@ -137,18 +156,18 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None):
             except ValueError as e:
                 base = None
                 warnings.append('project_directory: '+str(e))
-    assets, unknown = [], {}
+    if base_override is not ...:
+        base = base_override
+    assets = []
     for index, (cls, k) in enumerate(blocks, 1):
         if cancel(): raise Cancelled()
         name = k.get('name', Token(cls,0,0)).value
-        if cls not in COMMON_CLASSES and 'name' in k:
-            unknown[cls] = unknown.get(cls, 0)+1
         for key, t in k.items():
-            if key not in PATH_KNOBS or not t.value: continue
+            if key not in PATH_KNOBS | (extra_path_knobs or {}).get(cls, set()) or not t.value: continue
             if cls in {'Write','DeepWrite'}: continue
             if key == 'file' and cls in {'Camera2','Camera3','Axis2','Axis3','ReadGeo','ReadGeo2','ReadGeo3'}:
                 if k.get('read_from_file', Token('false',0,0)).value not in {'true','1'}: continue
-            a = Asset(name,key,t.value,t.start,t.end); assets.append(a)
+            a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls); assets.append(a)
             try:
                 source = resolve(t.value, base).resolve(); a.source = str(source)
                 matches = list(SEQUENCE.finditer(source.name))
@@ -172,12 +191,20 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None):
                 a.status = '缺帧' if a.missing else ('就绪' if a.files else '缺失')
             except (ValueError,OSError) as e: a.status = '待处理'; a.note = str(e)
         progress(index, len(blocks), name)
-    if unknown:
-        warnings.append('未识别节点类型（不代表缺失插件）：'+ '、'.join(f'{cls} × {count}' for cls,count in sorted(unknown.items()))+'；请核对相关依赖。')
-    warnings.append('外部 Gizmo、二进制插件及隐式 OCIO 依赖尚未检查。')
-    return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)))
+    return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)),base=base)
+
+
+def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, plugin_paths=None, plugin_overrides=None):
+    from gizmo import scan_dependencies
+    plan = _scan_media(path, cancel, progress)
+    scan_dependencies(plan, plugin_paths, plugin_overrides or {}, cancel, progress)
+    return plan
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None):
+    from gizmo import check_sources, finish_bundle
+    if plan.plugin_blockers:
+        raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
+    check_sources(plan, cancel)
     output = Path(output).resolve(); output.mkdir(parents=True, exist_ok=True)
     tag = hashlib.sha256(str(plan.script).encode()).hexdigest()[:10]
     name = re.sub(r'[^\w.-]', '_', plan.script.stem)+'_'+tag
@@ -187,7 +214,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     # Windows may deny renaming a large directory even after all copies succeeded.
     # Reserve the final name immediately; the marker guards unfinished packages.
     stage = target
-    edits, copied, rows = [], set(), []
+    edits, copied, rows, hashes = {}, set(), [], {}
     total = len({p for a in plan.assets for p in a.files}); done = 0
     try:
         marker = stage/'PACKAGING_INCOMPLETE.txt'
@@ -201,7 +228,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             byte_progress(0, total_bytes, '准备复制')
         for a in plan.assets:
             if cancel(): raise Cancelled()
-            row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files)}
+            row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files),'document':a.owner}
             rows.append(row)
             if not a.files: continue
             folder = hashlib.sha256(os.path.normcase(str(Path(a.source).parent)).encode()).hexdigest()[:16]
@@ -211,18 +238,24 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                 destination = dest/p.name
                 succeeded = False
                 try:
+                    digest = hashlib.sha256()
+                    before = p.stat()
                     with p.open('rb') as src, destination.open('xb') as dst:
                         while True:
                             if cancel(): raise Cancelled()
                             chunk = src.read(4*1024*1024)
                             if not chunk: break
                             dst.write(chunk)
+                            digest.update(chunk)
                             copied_bytes += len(chunk)
                             if byte_progress is not None:
                                 byte_progress(copied_bytes, total_bytes, p.name)
                     # Preserve timestamps without copying Windows read-only flags.
                     metadata = p.stat()
+                    if (before.st_size, before.st_mtime_ns) != (metadata.st_size, metadata.st_mtime_ns):
+                        raise DependencyError(f'复制过程中素材发生变化，请重新扫描：{p}')
                     os.utime(destination,(metadata.st_atime,metadata.st_mtime))
+                    hashes[destination.relative_to(stage).as_posix()] = digest.hexdigest()
                     succeeded = True
                 finally:
                     if not succeeded: destination.unlink(missing_ok=True)
@@ -230,13 +263,14 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             rel = f'media/{folder}/{Path(a.source).name}'
             # Quoted Tcl word retains command substitution for relocatable script path.
             new = '"[file dirname [value root.name]]/'+rel+'"'
-            edits.append((a.start,a.end,new)); row['packed_path'] = rel
+            edits.setdefault(a.owner or str(plan.script), []).append((a.start,a.end,new)); row['packed_path'] = rel
         text = plan.text
-        for start,end,value in sorted(edits,reverse=True): text = text[:start]+value+text[end:]
+        for start,end,value in sorted(edits.get(str(plan.script), []),reverse=True): text = text[:start]+value+text[end:]
         with (stage/plan.script.name).open('w',encoding=plan.encoding,newline='') as f: f.write(text)
-        report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'manual_required','warnings':plan.warnings,'assets':rows}
+        plugin_report = finish_bundle(plan, stage, edits, hashes, cancel)
+        report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-        (stage/'打包说明.txt').write_text('打开本目录中的 .nk 文件。移动时请搬走整个文件夹。\n待处理、缺失、缺帧及插件依赖请查看 report.json。\n',encoding='utf-8')
+        (stage/'打包说明.txt').write_text('有 Gizmo 时请双击 打开工程.cmd，或使用 Nuke 执行 load_package.py；不要直接双击 .nk。\n移动时请搬走整个文件夹。\n仅完成静态依赖收集与文件校验，尚不代表 Nuke 加载或渲染验证通过。\n素材待处理、缺失、缺帧及其他限制请查看 report.json。\n',encoding='utf-8')
         if cancel(): raise Cancelled()
         marker.unlink()
         return target

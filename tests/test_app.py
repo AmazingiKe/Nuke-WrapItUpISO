@@ -197,22 +197,54 @@ class WindowTests(unittest.TestCase):
         self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
         self.window.project_table.selection_set(str(second.resolve()))
         self.window.update()
-        self.assertEqual(len(self.window.table.get_children()), 1)
+        self.assertEqual(len(self.window.table.get_children()), 2)
         row = self.window.table.item(self.window.table.get_children()[0], 'values')
         self.assertIn('missing.exr', row)
         self.assertIn('缺失', row)
         self.assertIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
-        self.assertIn('未识别', self.window.dependencies.get('1.0', 'end'))
+        self.assertIn('未找到', self.window.dependencies.get('1.0', 'end'))
         self.assertIn('缺失 1 项', self.log())
         self.assertNotIn('VendorGizmo', self.log())
         self.assertIn(str(second.resolve()), self.window.dependencies.get('1.0', 'end'))
         self.window.scan_only()
         self.wait_finished()
-        self.assertEqual(len(self.window.table.get_children()), 1)
+        self.assertEqual(len(self.window.table.get_children()), 2)
         self.window.clear()
         self.assertEqual(self.window.project_table.get_children(), ())
         self.assertEqual(self.window.table.get_children(), ())
         self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
+
+    def test_gizmo_conflict_selection_and_delivery_from_window(self):
+        plugins = self.folder / 'plugins'
+        other = plugins / 'other'
+        other.mkdir(parents=True)
+        first = plugins / 'Demo.gizmo'
+        first.write_text('Gizmo {\n name Demo\n}\nend_group\n')
+        selected = other / 'Demo.gizmo'
+        selected.write_text('Gizmo {\n name Demo\n}\nBlur {\n name blur\n}\nend_group\n')
+        self.source.write_text('Demo {\n name Demo1\n}\n')
+        self.window.plugin_paths = [str(plugins)]
+        self.window.add([self.source])
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertIn('需核对', self.window.project_table.item(str(self.source), 'values'))
+        row = self.window.table.get_children()[0]
+        self.assertIn('同名冲突', self.window.table.item(row, 'values'))
+        self.window.output.set(str(self.folder / 'delivery'))
+        self.window.pack()
+        self.wait_finished()
+        self.assertIn('依赖待处理', self.window.project_table.item(str(self.source), 'values'))
+        self.assertFalse(list(self.folder.rglob('report.json')))
+        self.window.table.selection_set(self.window.table.get_children()[0])
+        self.window.update()
+        self.assertIn(str(selected), self.window.dependencies.get('1.0', 'end'))
+        with patch('app.filedialog.askopenfilename', return_value=str(selected)):
+            self.window.choose_plugin_source()
+        self.window.pack()
+        self.wait_finished()
+        report = json.loads(next(self.folder.rglob('report.json')).read_text(encoding='utf-8'))
+        self.assertEqual(report['plugins'][0]['source'], str(selected))
+        self.assertTrue(report['gizmo_dependencies_complete'])
 
     def test_failed_scan_shows_error_for_selected_project(self):
         self.source.write_text('Read {', encoding='utf-8')
