@@ -1,4 +1,4 @@
-"""Offline .nk collection. Never imports Nuke or executes script expressions."""
+"""Collect .nk assets without importing Nuke or executing script expressions."""
 from __future__ import annotations
 import os, re, json, hashlib, shutil, stat
 from pathlib import Path
@@ -173,8 +173,8 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None):
             except (ValueError,OSError) as e: a.status = '待处理'; a.note = str(e)
         progress(index, len(blocks), name)
     if unknown:
-        warnings.append('未识别节点类型（不代表缺失插件）：'+ '、'.join(f'{cls} × {count}' for cls,count in sorted(unknown.items()))+'；离线模式无法验证其依赖。')
-    warnings.append('离线模式不验证外部 Gizmo、二进制插件和隐式 OCIO 依赖；素材状态请查看列表。')
+        warnings.append('未识别节点类型（不代表缺失插件）：'+ '、'.join(f'{cls} × {count}' for cls,count in sorted(unknown.items()))+'；请核对相关依赖。')
+    warnings.append('外部 Gizmo、二进制插件及隐式 OCIO 依赖尚未检查。')
     return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)))
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None):

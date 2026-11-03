@@ -4,7 +4,7 @@ from core import scan, package
 from app_version import VERSION
 
 def main():
-    parser=argparse.ArgumentParser(description='Nuke 离线打包器，仅需 Python 标准库，无需 Nuke')
+    parser=argparse.ArgumentParser(description='Nuke 批量打包器，仅需 Python 标准库，无需 Nuke')
     parser.add_argument('--version', action='version', version=f'Nuke Batch Packager {VERSION}')
     parser.add_argument('scripts',nargs='+'); parser.add_argument('-o','--output'); parser.add_argument('--scan',action='store_true')
     args=parser.parse_args()

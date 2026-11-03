@@ -118,7 +118,7 @@ class Worker(threading.Thread):
 class Window(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f'Nuke Batch Packager {VERSION} · 离线批量打包')
+        self.title(f'Nuke Batch Packager {VERSION} · 批量打包')
         self.geometry('1160x880')
         self.minsize(780, 640)
         self.paths = []
