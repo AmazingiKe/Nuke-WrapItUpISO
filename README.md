@@ -1,5 +1,7 @@
 # Nuke Batch Packager
 
+> Fuck Vendor Nuke Pack. One Click, No Bullshit.
+
 独立 Python 应用，使用 Tkinter / ttk 界面，直接读取 `.nk`，无需安装或启动 Nuke。
 
 ## Windows 启动
