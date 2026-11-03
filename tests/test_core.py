@@ -100,6 +100,24 @@ Write {
     def test_malformed(self):
         self.script.write_text('Read {\n file hello.exr\n')
         with self.assertRaises(ValueError): scan(self.script)
+
+    def test_chinese_legacy_encoding_and_invalid_encoding(self):
+        text = '# 注释\nRead {\n file other/image.0001.exr\n name 中文节点\n}\n'
+        self.script.write_bytes(text.encode('gb18030'))
+        plan = scan(self.script)
+        self.assertEqual(plan.encoding, 'gb18030')
+        target = package(plan, self.root / 'legacy')
+        self.assertIn('中文节点', (target / self.script.name).read_bytes().decode('gb18030'))
+        self.script.write_bytes(b'\xff')
+        with self.assertRaisesRegex(ValueError, '无法解码'):
+            scan(self.script)
+
+    def test_inactive_geometry_file_and_special_path_are_not_collected(self):
+        self.script.write_text('Camera2 {\n read_from_file false\n file other/image.0001.exr\n name camera\n}\nRead {\n file "bad;path.exr"\n name special\n}\n')
+        plan = scan(self.script)
+        self.assertEqual(len(plan.assets), 1)
+        self.assertEqual(plan.assets[0].status, '待处理')
+        self.assertIn('特殊路径', plan.assets[0].note)
     def test_unresolved_project_does_not_guess(self):
         self.script.write_text('Root {\n project_directory "[getenv PROJECT]"\n}\nRead {\n file plates/image.%04d.exr\n}\n')
         plan=scan(self.script); self.assertEqual(plan.assets[0].status,'待处理'); self.assertEqual(plan.assets[0].files,[])
@@ -127,5 +145,53 @@ Write {
             with self.assertRaises(Cancelled): package(plan,self.root/'cancelled',lambda:True)
             self.assertFalse(any((self.root/'cancelled').glob('*')))
         finally: source.chmod(stat.S_IWRITE|stat.S_IREAD)
+
+    def test_media_changes_during_copy_aborts_and_removes_partial_package(self):
+        source = self.root / 'mutable.exr'
+        source.write_bytes(b'x' * (5 * 1024 * 1024))
+        self.script.write_text('Read {\n file mutable.exr\n name plate\n}\n')
+        plan = scan(self.script)
+        changed = False
+        def mutate(done, total, name):
+            nonlocal changed
+            if done and not changed:
+                changed = True
+                with source.open('ab') as stream:
+                    stream.write(b'changed while copying')
+        with self.assertRaisesRegex(RuntimeError, '复制过程中素材发生变化'):
+            package(plan, self.root / 'changing', byte_progress=mutate)
+        self.assertEqual(list((self.root / 'changing').iterdir()), [])
+
+    def test_cleanup_failure_keeps_incomplete_marker_and_reports_exact_path(self):
+        plan = scan(self.script)
+        def cancel_after_copy(*args):
+            raise Cancelled()
+        with patch('core.shutil.rmtree', side_effect=PermissionError('directory locked')):
+            with self.assertRaisesRegex(RuntimeError, '未完成目录清理失败') as error:
+                package(plan, self.root / 'locked', progress=cancel_after_copy)
+        remaining = list((self.root / 'locked').iterdir())
+        self.assertEqual(len(remaining), 1)
+        self.assertIn(str(remaining[0]), str(error.exception))
+        self.assertTrue((remaining[0] / 'PACKAGING_INCOMPLETE.txt').is_file())
+        self.assertFalse((remaining[0] / 'report.json').exists())
+
+    def test_readonly_cleanup_retries_removal_without_touching_source(self):
+        import os, shutil, stat
+        original_rmtree = shutil.rmtree
+        plan = scan(self.script)
+        def readonly_cleanup(stage, onerror):
+            marker = stage / 'PACKAGING_INCOMPLETE.txt'
+            marker.chmod(stat.S_IREAD)
+            onerror(os.unlink, str(marker), (PermissionError, PermissionError('readonly'), None))
+            self.assertFalse(marker.exists())
+            self.assertIn(self.root.resolve(), stage.resolve().parents)
+            original_rmtree(stage)
+        def cancel_after_copy(*args):
+            raise Cancelled()
+        with patch('core.shutil.rmtree', side_effect=readonly_cleanup):
+            with self.assertRaises(Cancelled):
+                package(plan, self.root / 'readonly', progress=cancel_after_copy)
+        self.assertEqual(list((self.root / 'readonly').iterdir()), [])
+        self.assertEqual((self.root / 'other/image.0001.exr').read_bytes(), b'different')
 
 if __name__=='__main__': unittest.main()

@@ -102,6 +102,69 @@ class WindowTests(unittest.TestCase):
             self.window.choose_output()
         self.assertEqual(self.window.output.get(), str(self.folder))
 
+    def test_plugin_directory_dialog_add_remove_save_and_cancel(self):
+        self.window.plugin_paths = []
+        self.window.add([self.source])
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertTrue(self.window.plans)
+        self.window.configure_plugins()
+        dialog = next(w for w in self.window.winfo_children() if isinstance(w, tk.Toplevel))
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        widgets = list(descendants(dialog))
+        listing = next(w for w in widgets if isinstance(w, tk.Listbox))
+        buttons = {str(w.cget('text')): w for w in widgets if w.winfo_class() == 'TButton'}
+        first, second = self.folder / 'first_plugins', self.folder / 'second_plugins'
+        first.mkdir(); second.mkdir()
+        with patch('app.filedialog.askdirectory', side_effect=['', str(first), str(first), str(second)]):
+            for _ in range(4):
+                buttons['添加目录'].invoke()
+        self.assertEqual(listing.get(0, 'end'), (str(first), str(second)))
+        listing.selection_set(0)
+        buttons['移除选中'].invoke()
+        buttons['保存'].invoke()
+        self.assertEqual(self.window.plugin_paths, [str(second)])
+        self.assertEqual(self.window.plans, {})
+        self.assertIn('待重新扫描', self.window.project_table.item(str(self.source), 'values'))
+        self.assertEqual(self.window.paths, [self.source])
+        self.window.configure_plugins()
+        dialog = next(w for w in self.window.winfo_children() if isinstance(w, tk.Toplevel))
+        listing = next(w for w in descendants(dialog) if isinstance(w, tk.Listbox))
+        listing.insert('end', str(first))
+        dialog.destroy()
+        self.assertEqual(self.window.plugin_paths, [str(second)])
+
+    def test_plugin_source_selection_validates_selection_and_filename(self):
+        self.window.plugin_paths = []
+        with patch('app.messagebox.showinfo') as info:
+            self.window.choose_plugin_source()
+        info.assert_called_once()
+        self.source.write_text('Demo {\n name Demo1\n}\n')
+        self.window.add([self.source])
+        self.window.scan_only()
+        self.wait_finished()
+        self.window.table.selection_set(self.window.table.get_children()[0])
+        with patch('app.filedialog.askopenfilename', return_value=str(self.folder / 'Wrong.gizmo')):
+            with patch('app.messagebox.showerror') as error:
+                self.window.choose_plugin_source()
+        error.assert_called_once()
+        self.assertEqual(self.window.plugin_overrides, {})
+        with patch('app.filedialog.askopenfilename', return_value=''):
+            self.window.choose_plugin_source()
+        self.assertEqual(self.window.plugin_overrides, {})
+        selected = self.folder / 'Demo.gizmo'
+        selected.write_text('Gizmo {\n name Demo\n}\nend_group\n')
+        with patch('app.filedialog.askopenfilename', return_value=str(selected)):
+            self.window.choose_plugin_source()
+        self.window.scan_only()
+        self.wait_finished()
+        plan, _ = self.window.plans[self.source]
+        self.assertEqual(plan.plugins[0].source, str(selected))
+        self.assertEqual(plan.plugins[0].status, '就绪')
+
     def test_output_drop_accepts_one_folder_without_adding_projects(self):
         destination = self.folder / '中文 输出目录'
         destination.mkdir()

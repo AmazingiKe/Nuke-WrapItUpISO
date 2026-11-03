@@ -1,14 +1,15 @@
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import tempfile
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from core import scan, package
+from core import Cancelled, scan, package
 
 
 class GizmoTests(unittest.TestCase):
@@ -213,6 +214,123 @@ class GizmoTests(unittest.TestCase):
         self.gizmo('Outer')
         package(self.scan(), self.root / 'safe')
         self.assertFalse(sentinel.exists())
+
+    def test_source_changes_during_scan_block_delivery(self):
+        import core
+        original_scan = core._scan_media
+        gizmo = self.gizmo('Outer')
+        for changed in (self.script, gizmo):
+            with self.subTest(changed=changed.name):
+                calls = []
+                def scan_and_change(path, *args, **kwargs):
+                    result = original_scan(path, *args, **kwargs)
+                    if Path(path) == changed and changed not in calls:
+                        calls.append(changed)
+                        with changed.open('a', encoding='utf-8') as stream:
+                            stream.write('# changed by another process\n')
+                    return result
+                with patch('core._scan_media', side_effect=scan_and_change):
+                    plan = self.scan()
+                self.assertTrue(plan.plugin_blockers)
+                with self.assertRaisesRegex(RuntimeError, '变化'):
+                    package(plan, self.root / 'changed')
+                self.assertFalse((self.root / 'changed').exists())
+
+    def test_plugin_read_error_and_disappearing_file_are_reported(self):
+        import core
+        gizmo = self.gizmo('Outer')
+        original_open = Path.open
+        def denied(path, *args, **kwargs):
+            if path == gizmo:
+                raise PermissionError('plugin access denied')
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, 'open', denied):
+            plan = self.scan()
+        self.assertIn('读取失败', plan.plugins[0].note)
+        with self.assertRaises(RuntimeError):
+            package(plan, self.root / 'denied')
+        original_scan = core._scan_media
+        def scan_then_remove(path, *args, **kwargs):
+            result = original_scan(path, *args, **kwargs)
+            if Path(path) == gizmo:
+                gizmo.unlink()
+            return result
+        with patch('core._scan_media', side_effect=scan_then_remove):
+            plan = self.scan()
+        self.assertEqual(plan.plugins[0].status, '待核对')
+        with self.assertRaises(RuntimeError):
+            package(plan, self.root / 'gone')
+
+    def test_partial_directory_access_failure_blocks_even_found_plugin(self):
+        self.gizmo('Outer')
+        def walk_with_failure(root, onerror, **kwargs):
+            yield str(root), [], ['Outer.gizmo']
+            onerror(PermissionError(13, 'access denied', str(root / 'unreadable')))
+        with patch('gizmo.os.walk', side_effect=walk_with_failure):
+            plan = self.scan()
+        self.assertIn('插件目录读取失败', ' '.join(plan.plugin_errors))
+        with self.assertRaises(RuntimeError):
+            package(plan, self.root / 'partial')
+
+    def test_script_buttons_and_external_load_commands_are_blocked_without_execution(self):
+        sentinel = self.root / 'executed'
+        cases = [
+            (' addUserKnob {22 run T {open("' + sentinel.as_posix() + '","w")}}\n', '', 'Python/Tcl 按钮'),
+            ('', 'source external_script.tcl\n', '外部脚本加载命令'),
+        ]
+        for controls, children, reason in cases:
+            with self.subTest(controls=controls, children=children):
+                self.gizmo('Outer', children, knobs=controls)
+                plan = self.scan()
+                self.assertEqual(plan.plugins[0].status, '待核对')
+                self.assertIn(reason, plan.plugins[0].note)
+                with self.assertRaises(RuntimeError):
+                    package(plan, self.root / 'scripted')
+                self.assertFalse(sentinel.exists())
+
+    def test_excessive_nesting_reports_problem_instead_of_recursion_crash(self):
+        self.script.write_text('Level0 {\n name first\n}\n')
+        for i in range(102):
+            self.gizmo(f'Level{i}', f'Level{i+1} {{\n name next\n}}\n' if i < 101 else '')
+        plan = self.scan()
+        self.assertTrue(any('100 层' in p.note for p in plan.plugins))
+        self.assertNotEqual(plan.plugins[0].status, '就绪')
+        with self.assertRaises(RuntimeError):
+            package(plan, self.root / 'deep')
+
+    def test_cancel_during_plugin_discovery_and_bundle_write(self):
+        self.gizmo('Outer')
+        stop = False
+        def progress(done, total, description):
+            nonlocal stop
+            if description.startswith('查找插件'):
+                stop = True
+        with self.assertRaises(Cancelled):
+            self.scan(cancel=lambda: stop, progress=progress)
+        plan = self.scan()
+        from gizmo import finish_bundle
+        def cancel_at_write(plan, stage, edits, hashes, cancel):
+            return finish_bundle(plan, stage, edits, hashes, lambda: True)
+        with patch('gizmo.finish_bundle', side_effect=cancel_at_write):
+            with self.assertRaises(Cancelled):
+                package(plan, self.root / 'cancelled')
+        self.assertEqual(list((self.root / 'cancelled').iterdir()), [])
+
+    def test_loader_rejects_altered_delivery_before_opening_nuke_project(self):
+        self.gizmo('Outer')
+        target = package(self.scan(), self.root / 'delivery')
+        nuke = Mock()
+        loader = target / 'load_package.py'
+        with patch.dict(sys.modules, {'nuke': nuke}):
+            runpy.run_path(str(loader))
+        nuke.scriptOpen.assert_called_once_with(str(target / self.script.name))
+        nuke.reset_mock()
+        (target / 'gizmos/Outer.gizmo').write_text('altered')
+        with patch.dict(sys.modules, {'nuke': nuke}):
+            with self.assertRaisesRegex(RuntimeError, 'checksum failed'):
+                runpy.run_path(str(loader))
+        nuke.pluginAddPath.assert_not_called()
+        nuke.scriptOpen.assert_not_called()
 
 
 if __name__ == '__main__':
