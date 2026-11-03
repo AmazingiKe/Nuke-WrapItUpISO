@@ -11,6 +11,7 @@ from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from core import Cancelled, DependencyError, package, scan
 from gizmo import Plugin, default_paths
 from app_version import VERSION
+from project_picker import ask_projects
 
 
 def readable_error(error):
@@ -47,6 +48,47 @@ def brief_asset_summary(plan):
     if len(plan.warnings) > 1:
         parts.append('有依赖提示')
     return '，'.join(parts)
+
+
+class ToolTip:
+    """Short labels for icon buttons, also shown on keyboard focus."""
+    def __init__(self, widget, text):
+        self.widget, self.text = widget, text
+        self.pending = None
+        self.popup = None
+        for event in ('<Enter>', '<FocusIn>'):
+            widget.bind(event, self.schedule, add='+')
+        for event in ('<Leave>', '<FocusOut>', '<ButtonPress>', '<Destroy>'):
+            widget.bind(event, self.hide, add='+')
+
+    def schedule(self, event=None):
+        self.hide()
+        self.pending = self.widget.after(450, self.show)
+
+    def show(self):
+        self.pending = None
+        if not self.widget.winfo_viewable():
+            return
+        self.popup = tk.Toplevel(self.widget)
+        self.popup.withdraw()
+        self.popup.overrideredirect(True)
+        self.popup.attributes('-topmost', True)
+        ttk.Label(self.popup, text=self.text, padding=(8, 5),
+                  relief='solid', borderwidth=1).pack()
+        self.popup.update_idletasks()
+        x = min(self.widget.winfo_rootx(),
+                self.widget.winfo_screenwidth() - self.popup.winfo_reqwidth() - 8)
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.popup.geometry(f'+{max(0, x)}+{y}')
+        self.popup.deiconify()
+
+    def hide(self, event=None):
+        if self.pending is not None:
+            self.widget.after_cancel(self.pending)
+            self.pending = None
+        if self.popup is not None:
+            self.popup.destroy()
+            self.popup = None
 
 
 class CombinedProgress(tk.Canvas):
@@ -230,6 +272,7 @@ class Window(TkinterDnD.Tk):
         self.asset_rows = {}
         self.plugin_paths = None
         self.plugin_overrides = {}
+        self.last_project_directory = None
         self.worker = None
         self.events = Queue()
         self.closing = False
@@ -252,25 +295,14 @@ class Window(TkinterDnD.Tk):
         style.configure('Title.TLabel', font=('Microsoft YaHei UI', 20, 'bold'))
         style.configure('Tagline.TLabel', font=('Segoe UI', 11, 'bold'))
         style.configure('TButton', padding=(10, 6))
+        style.configure('Tool.TButton', padding=(8, 7), font=('Segoe MDL2 Assets', 14))
+        style.configure('Add.Tool.TButton', font=('Segoe UI', 14))
         style.configure('Treeview', rowheight=27)
         root = ttk.Frame(self, padding=16)
         root.pack(fill='both', expand=True)
         ttk.Label(root, text='Nuke 批量打包器', style='Title.TLabel').pack(anchor='w')
         ttk.Label(root, text='Fuck Vendor Nuke Pack. One Click, No Bullshit.',
                   style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(6, 16))
-        bar = ttk.Frame(root)
-        bar.pack(fill='x', pady=(0, 12))
-        self.controls = []
-        for text, command in [
-            ('添加工程', self.add_files), ('添加文件夹', self.add_folder),
-            ('清空', self.clear), ('扫描素材与插件', self.scan_only), ('插件目录', self.configure_plugins),
-            ('指定插件来源', self.choose_plugin_source), ('开始打包', self.pack),
-        ]:
-            button = ttk.Button(bar, text=text, command=command)
-            button.pack(side='left', padx=(0, 8))
-            self.controls.append(button)
-        self.cancel = ttk.Button(bar, text='取消', command=self.stop, state='disabled')
-        self.cancel.pack(side='right')
         output_row = ttk.Frame(root)
         output_row.pack(fill='x')
         ttk.Label(output_row, text='输出目录').pack(side='left', padx=(0, 8))
@@ -281,8 +313,32 @@ class Window(TkinterDnD.Tk):
         for widget in (output_row, self.output_entry, self.choose):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind('<<Drop>>', self.on_output_drop)
+        self.toolbar = ttk.Frame(root)
+        self.toolbar.pack(fill='x', pady=(10, 6))
+        self.controls = []
+        self.tooltips = []
+        for index, (symbol, label, command) in enumerate([
+            ('+', '添加工程 / 文件夹', self.choose_projects),
+            ('\ue74d', '清空工程列表', self.clear),
+            ('\ue721', '扫描素材与插件', self.scan_only),
+            ('\ue8b7', '插件目录', self.configure_plugins),
+            ('\ue71b', '指定插件来源', self.choose_plugin_source),
+            ('\ue768', '开始打包', self.pack),
+        ]):
+            if index in (2, 5):
+                ttk.Separator(self.toolbar, orient='vertical').pack(side='left', fill='y', padx=6, pady=5)
+            button = ttk.Button(self.toolbar, text=symbol, width=2, command=command,
+                                style='Add.Tool.TButton' if index == 0 else 'Tool.TButton')
+            button.pack(side='left', padx=(0, 4))
+            self.controls.append(button)
+            self.tooltips.append(ToolTip(button, label))
+        self.add_project_button = self.controls[0]
+        self.cancel = ttk.Button(self.toolbar, text='\ue71a', width=2, style='Tool.TButton',
+                                 command=self.stop, state='disabled')
+        self.cancel.pack(side='right')
+        self.tooltips.append(ToolTip(self.cancel, '取消当前任务'))
         self.panes = ttk.Panedwindow(root, orient='horizontal')
-        self.panes.pack(fill='both', expand=True, pady=(12, 0))
+        self.panes.pack(fill='both', expand=True)
         projects = ttk.Frame(self.panes, width=330, padding=(0, 0, 10, 0))
         details = ttk.Frame(self.panes, padding=(10, 0, 0, 0))
         self.panes.add(projects, weight=1)
@@ -371,7 +427,10 @@ class Window(TkinterDnD.Tk):
         for path in paths:
             path = Path(path)
             try:
-                found = sorted(path.rglob('*.nk')) if path.is_dir() else [path]
+                is_folder = path.is_dir()
+                found = sorted(item for item in path.rglob('*.nk') if item.is_file()) if is_folder else [path]
+                if is_folder and not found:
+                    self.append_log(f'未找到 .nk · {path.name}', 'warning')
                 for item in found:
                     item = item.resolve()
                     if item.is_file() and item.suffix.lower() == '.nk' and item not in self.paths:
@@ -408,13 +467,18 @@ class Window(TkinterDnD.Tk):
         self.append_log('请拖入一个文件夹作为输出目录。')
         return REFUSE_DROP
 
-    def add_files(self):
-        self.add(filedialog.askopenfilenames(parent=self, title='选择 Nuke 工程', filetypes=[('Nuke', '*.nk')]))
-
-    def add_folder(self):
-        path = filedialog.askdirectory(parent=self, title='选择工程目录')
-        if path:
-            self.add([path])
+    def choose_projects(self):
+        if self.busy():
+            return
+        initialdir = self.last_project_directory or (self.paths[0].parent if self.paths else Path.home())
+        try:
+            selected = ask_projects(self, initialdir)
+        except (OSError, ValueError) as error:
+            messagebox.showerror('无法打开文件选择器', str(error), parent=self)
+            return
+        if selected:
+            self.last_project_directory = Path(selected[0]).parent
+            self.add(selected)
 
     def choose_output(self):
         path = filedialog.askdirectory(parent=self, title='选择输出目录')

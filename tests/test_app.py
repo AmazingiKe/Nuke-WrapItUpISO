@@ -92,17 +92,34 @@ class WindowTests(unittest.TestCase):
             self.window.pack()
             self.window.scan_only()
             self.assertEqual(info.call_count, 2)
-        with patch('app.filedialog.askopenfilenames', return_value=[str(self.source)]):
-            self.window.add_files()
+        with patch('app.ask_projects', return_value=[self.source]):
+            self.window.choose_projects()
         with patch('app.filedialog.askdirectory', return_value=str(self.folder)):
-            self.window.add_folder()
             self.window.choose_output()
         self.assertEqual(self.window.paths, [self.source.resolve()])
         self.assertEqual(self.window.output.get(), str(self.folder))
         with patch('app.filedialog.askdirectory', return_value=''):
-            self.window.add_folder()
             self.window.choose_output()
         self.assertEqual(self.window.output.get(), str(self.folder))
+
+    def test_plus_toolbar_adds_multiple_folders_and_files_without_duplicates(self):
+        first, second, empty = (self.folder / name for name in ('first', 'second', 'empty'))
+        for folder in (first, second, empty):
+            folder.mkdir()
+        nested = first / 'nested'; nested.mkdir()
+        a, b = nested / 'a.nk', second / 'b.NK'
+        a.write_text('Root {\n}\n'); b.write_text('Root {\n}\n')
+        with patch('app.ask_projects', return_value=[first, second, self.source, a, empty]):
+            self.window.add_project_button.invoke()
+        self.assertEqual(set(self.window.paths), {a.resolve(), b.resolve(), self.source.resolve()})
+        self.assertIn('未找到 .nk', self.log())
+        labels = [str(button.cget('text')) for button in self.window.controls]
+        self.assertNotIn('添加工程', labels)
+        self.assertNotIn('添加文件夹', labels)
+        self.assertEqual(self.window.add_project_button.cget('text'), '+')
+        with patch('app.ask_projects', return_value=[]):
+            self.window.choose_projects()
+        self.assertEqual(len(self.window.paths), 3)
 
     def test_plugin_directory_dialog_add_remove_save_and_cancel(self):
         self.window.plugin_paths = []
