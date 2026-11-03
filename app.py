@@ -120,8 +120,7 @@ class Window(TkinterDnD.Tk):
         root.pack(fill='both', expand=True)
         ttk.Label(root, text='Nuke 批量打包器', style='Title.TLabel').pack(anchor='w')
         ttk.Label(root, text='Fuck Vendor Nuke Pack. One Click, No Bullshit.',
-                  style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(6, 0))
-        ttk.Label(root, text='无需启动 Nuke · 拖入 .nk / 文件夹 · 自动收集素材与重写路径').pack(anchor='w', pady=(4, 16))
+                  style='Tagline.TLabel', wraplength=730).pack(anchor='w', pady=(6, 16))
         bar = ttk.Frame(root)
         bar.pack(fill='x', pady=(0, 12))
         self.controls = []
@@ -201,9 +200,9 @@ class Window(TkinterDnD.Tk):
         self.progress = ttk.Progressbar(footer, mode='determinate', maximum=1)
         self.progress.pack(fill='x', pady=(12, 4))
         ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
+        ttk.Label(footer, text='日志').pack(anchor='w', pady=(8, 4))
         self.log = ScrolledText(footer, height=4, wrap='word', state='disabled')
-        self.log.pack(fill='x', pady=10)
-        ttk.Label(footer, text='离线限制：TCL 动态路径、外部 Gizmo / 插件、隐式 OCIO 依赖需人工核对。Write 输出不收集。', wraplength=730).pack(anchor='w')
+        self.log.pack(fill='x')
 
     def busy(self):
         return self.worker is not None
