@@ -12,6 +12,37 @@ from core import Cancelled, package, scan
 from app_version import VERSION
 
 
+def readable_error(error):
+    if isinstance(error, FileExistsError):
+        return '输出已存在，请更换输出目录'
+    if isinstance(error, FileNotFoundError):
+        return '找不到文件，请检查路径'
+    if isinstance(error, PermissionError):
+        return '无法访问文件，请检查权限或文件占用'
+    if isinstance(error, ValueError):
+        return '工程内容无法解析，请查看右侧状态'
+    if '未完成目录清理失败' in str(error):
+        return '未完成目录清理失败，请查看右侧状态并手动检查'
+    if isinstance(error, OSError):
+        return '文件读写失败，请检查磁盘和路径'
+    return '处理失败，请查看右侧状态'
+
+
+def needs_review(plan):
+    return any(asset.status != '就绪' for asset in plan.assets) or len(plan.warnings) > 1
+
+
+def brief_asset_summary(plan):
+    parts = [f'{len(plan.assets)} 项素材']
+    for status in ('缺失', '缺帧', '待处理'):
+        count = sum(asset.status == status for asset in plan.assets)
+        if count:
+            parts.append(f'{status} {count} 项')
+    if len(plan.warnings) > 1:
+        parts.append('有依赖提示')
+    return '，'.join(parts)
+
+
 class Worker(threading.Thread):
     def __init__(self, paths, output, events):
         super().__init__(daemon=False)
@@ -49,7 +80,6 @@ class Worker(threading.Thread):
                 self.emit('project_state', path, '扫描中')
                 self.report_progress('读取工程', 0, 0, path.name)
                 try:
-                    self.emit('message', '扫描：' + str(path))
                     plan = scan(path, self.cancelled.is_set,
                                 progress=lambda *values: self.report_progress('扫描节点', *values))
                     self.report_progress('统计素材', 0, 0, path.name)
@@ -60,24 +90,26 @@ class Worker(threading.Thread):
                     if self.output:
                         self.emit('project_state', path, '打包中')
                         self.report_progress('准备打包', 0, 0, path.name)
-                        result = package(
+                        package(
                             plan, self.output, self.cancelled.is_set,
                             self.file_copied,
                             byte_progress=lambda *values: self.report_progress('复制素材', *values),
                         )
-                        issues = sum(asset.status != '就绪' for asset in plan.assets)
-                        self.emit('message', f'已生成：{result}；需核对 {issues} 项，另请检查插件依赖提示。')
                         self.emit('project_state', path, '已打包')
+                    action = '打包完成' if self.output else '扫描完成'
+                    self.emit('message', f'{action} · {path.name} · {brief_asset_summary(plan)}',
+                              'warning' if needs_review(plan) else 'success')
                     completed += 1
                 except Cancelled:
                     cancelled = True
                     self.emit('project_state', path, '已取消')
-                    self.emit('message', '操作已取消，当前工程的未完成文件已清理。')
+                    detail = '，未完成文件已清理' if self.output else ''
+                    self.emit('message', f'已取消 · {path.name}{detail}', 'warning')
                     break
                 except Exception as error:
                     failed += 1
                     self.emit('project_state', path, '失败', f'{type(error).__name__}: {error}')
-                    self.emit('message', f'失败：{path}\n{type(error).__name__}: {error}')
+                    self.emit('message', f'失败 · {path.name} · {readable_error(error)}', 'error')
                 self.emit('project_done', completed + failed, len(self.paths))
         finally:
             self.emit('finished', completed, failed, cancelled)
@@ -201,16 +233,26 @@ class Window(TkinterDnD.Tk):
         self.progress.pack(fill='x', pady=(12, 4))
         ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
         ttk.Label(footer, text='日志').pack(anchor='w', pady=(8, 4))
-        self.log = ScrolledText(footer, height=4, wrap='word', state='disabled')
+        self.log = ScrolledText(footer, height=5, wrap='word', state='disabled',
+                                font=('Microsoft YaHei UI', 10), padx=8, pady=6,
+                                spacing1=2, spacing3=4)
+        for level, color in [('info', '#334155'), ('success', '#16703c'),
+                             ('warning', '#985c00'), ('error', '#b42318')]:
+            self.log.tag_configure(level, foreground=color)
         self.log.pack(fill='x')
 
     def busy(self):
         return self.worker is not None
 
-    def append_log(self, text):
+    def append_log(self, text, level='info'):
         self.log.configure(state='normal')
-        self.log.insert('end', text + '\n')
+        self.log.insert('end', text + '\n', (level,))
         self.log.see('end')
+        self.log.configure(state='disabled')
+
+    def clear_log(self):
+        self.log.configure(state='normal')
+        self.log.delete('1.0', 'end')
         self.log.configure(state='disabled')
 
     def add(self, paths):
@@ -226,7 +268,7 @@ class Window(TkinterDnD.Tk):
                         self.paths.append(item)
                         self.project_table.insert('', 'end', iid=str(item), values=(item.name, '未扫描', '—'))
             except OSError as error:
-                self.append_log(f'添加失败：{path}；{error}')
+                self.append_log(f'添加失败 · {path.name} · {readable_error(error)}', 'error')
         self.update_project_count()
         if self.paths and not self.project_table.selection():
             self.project_table.selection_set(str(self.paths[0]))
@@ -250,8 +292,8 @@ class Window(TkinterDnD.Tk):
             if len(paths) == 1 and Path(paths[0]).is_dir():
                 self.output.set(str(Path(paths[0]).resolve()))
                 return COPY
-        except (OSError, tk.TclError) as error:
-            self.append_log(f'读取输出目录失败：{error}')
+        except (OSError, tk.TclError):
+            self.append_log('无法读取输出文件夹，请检查路径与权限。', 'error')
             return REFUSE_DROP
         self.append_log('请拖入一个文件夹作为输出目录。')
         return REFUSE_DROP
@@ -278,9 +320,7 @@ class Window(TkinterDnD.Tk):
         self.project_table.delete(*self.project_table.get_children())
         self.render_selected_project()
         self.update_project_count()
-        self.log.configure(state='normal')
-        self.log.delete('1.0', 'end')
-        self.log.configure(state='disabled')
+        self.clear_log()
 
     def scan_only(self):
         self.start(None)
@@ -298,6 +338,9 @@ class Window(TkinterDnD.Tk):
         if not self.paths:
             messagebox.showinfo('添加工程', '请先添加 .nk 工程。', parent=self)
             return
+        self.clear_log()
+        action = '打包' if output else '扫描'
+        self.append_log(f'开始{action} · 共 {len(self.paths)} 个工程')
         self.plans.clear()
         self.project_errors.clear()
         self.update_project_count()
@@ -347,9 +390,6 @@ class Window(TkinterDnD.Tk):
         self.set_project_state(plan.script, '需核对' if any(a.status != '就绪' for a in plan.assets) else '已扫描')
         if self.project_table.selection() == (str(plan.script),):
             self.render_selected_project()
-        self.append_log(f'{plan.script.name}：{len(plan.assets)} 项引用，约 {size / 1024 / 1024:.1f} MiB')
-        for warning in plan.warnings:
-            self.append_log('提示：' + warning)
 
     def set_project_state(self, path, status, error=''):
         self.project_table.set(str(path), 'status', status)
@@ -457,7 +497,17 @@ class Window(TkinterDnD.Tk):
         outcome = '已取消' if cancelled else ('结束，存在失败' if failed else '任务完成')
         self.progress_text.set(outcome)
         self.total_text.set(f'{outcome} · 成功 {completed} · 失败 {failed} · 共 {len(self.paths)} 个工程')
-        self.append_log(self.total_text.get() + '；素材完整性请核对列表与报告。')
+        review_count = sum(needs_review(plan) for plan, _ in self.plans.values())
+        summary = f'{"已取消" if cancelled else "本轮结束"} · 完成 {completed} 个工程'
+        if failed:
+            summary += f'，失败 {failed} 个'
+        if cancelled:
+            summary += f'，未完成 {len(self.paths) - completed - failed} 个'
+        if review_count:
+            summary += f'，{review_count} 个需核对'
+        if failed or review_count:
+            summary += '（见右侧状态）'
+        self.append_log(summary, 'error' if failed else ('warning' if cancelled or review_count else 'success'))
 
     def close(self):
         if self.busy():

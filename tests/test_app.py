@@ -64,7 +64,9 @@ class WindowTests(unittest.TestCase):
         rows = self.window.table.get_children()
         self.assertEqual(len(rows), 1)
         self.assertIn('就绪', self.window.table.item(rows[0], 'values'))
-        self.assertIn('离线模式', self.log())
+        self.assertIn('扫描完成', self.log())
+        self.assertNotIn('离线模式', self.log())
+        self.assertNotIn(str(self.folder), self.log())
         delivery = self.folder / 'delivery'
         delivery.mkdir()
         self.window.on_output_drop(SimpleNamespace(data=self.window.tk.call('list', str(delivery))))
@@ -76,7 +78,10 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(json.loads(reports[0].read_text(encoding='utf-8'))['copied_files'], 1)
         self.assertEqual(next(reports[0].parent.rglob('plate.exr')).read_bytes(), b'pixels')
         self.assertFalse((reports[0].parent / 'PACKAGING_INCOMPLETE.txt').exists())
-        self.assertIn('已生成', self.log())
+        self.assertIn('打包完成', self.log())
+        self.assertNotIn('开始扫描', self.log())
+        self.assertNotIn(str(self.folder), self.log())
+        self.assertEqual(len(self.log().strip().splitlines()), 3)
         self.assertTrue(self.window.cancel.instate(['disabled']))
         self.assertTrue(all(control.instate(['!disabled']) for control in self.window.controls))
 
@@ -116,7 +121,9 @@ class WindowTests(unittest.TestCase):
         self.window.add([broken, self.source])
         self.window.scan_only()
         self.wait_finished()
-        self.assertIn('ValueError', self.log())
+        self.assertIn('工程内容无法解析', self.log())
+        self.assertNotIn('ValueError', self.log())
+        self.assertIn('ValueError', self.window.project_errors[broken.resolve()])
         self.window.project_table.selection_set(str(self.source.resolve()))
         self.window.update()
         self.assertEqual(len(self.window.table.get_children()), 1)
@@ -146,7 +153,7 @@ class WindowTests(unittest.TestCase):
             self.assertEqual(self.window.paths, [self.source.resolve()])
             self.window.stop()
             self.wait_finished()
-        self.assertIn('操作已取消', self.log())
+        self.assertIn('已取消', self.log())
         self.assertIn('已取消', self.window.progress_text.get())
         self.assertLess(float(self.window.total_progress['value']), float(self.window.total_progress['maximum']))
 
@@ -196,6 +203,8 @@ class WindowTests(unittest.TestCase):
         self.assertIn('缺失', row)
         self.assertIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
         self.assertIn('未识别', self.window.dependencies.get('1.0', 'end'))
+        self.assertIn('缺失 1 项', self.log())
+        self.assertNotIn('VendorGizmo', self.log())
         self.assertIn(str(second.resolve()), self.window.dependencies.get('1.0', 'end'))
         self.window.scan_only()
         self.wait_finished()
@@ -213,6 +222,24 @@ class WindowTests(unittest.TestCase):
         self.assertIn('失败', self.window.project_table.item(str(self.source.resolve()), 'values'))
         self.assertEqual(self.window.table.get_children(), ())
         self.assertIn('ValueError', self.window.dependencies.get('1.0', 'end'))
+
+    def test_pack_errors_are_readable_and_keep_full_details(self):
+        self.window.add([self.source])
+        self.window.output.set(str(self.folder / 'delivery'))
+        cases = [
+            (FileExistsError('existing output details'), '输出已存在'),
+            (PermissionError('permission details'), '无法访问文件'),
+            (RuntimeError('未完成目录清理失败：' + str(self.folder)), '手动检查'),
+        ]
+        for error, expected in cases:
+            with self.subTest(error=type(error).__name__), patch('app.package', side_effect=error):
+                self.window.pack()
+                self.wait_finished()
+                self.assertIn(expected, self.log())
+                self.assertNotIn(type(error).__name__, self.log())
+                self.assertNotIn(str(self.folder), self.log())
+                self.assertIn(str(error), self.window.dependencies.get('1.0', 'end'))
+                self.assertTrue(self.window.log.tag_ranges('error'))
 
     def test_selected_asset_shows_status_and_resolved_path_below_table(self):
         self.source.write_text('Read {\n file missing.exr\n name missing_plate\n}\n', encoding='utf-8')
