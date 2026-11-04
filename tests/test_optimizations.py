@@ -135,6 +135,7 @@ class OptimizationTests(unittest.TestCase):
         from scan_cache import ScanSession
         nested = self.library / 'nested'
         nested.mkdir()
+        (self.library / 'init.py').write_text("import nuke\nnuke.pluginAddPath('nested')")
         self.script.write_text('Missing {\n}\n')
         session = ScanSession()
         session.scan(self.script)

@@ -121,8 +121,34 @@ class Plan:
     cache_roots: tuple = ()
     @property
     def size(self):
-        return sum(p.stat().st_size for p in {p for a in self.assets for p in a.files}) + sum(
-            Path(p.source).stat().st_size for p in self.plugins if p.source and p.status == '就绪')
+        return self.measure()[1]
+
+    def media_files(self, cancel=lambda: False):
+        seen = set()
+        for asset in self.assets:
+            for path in asset.files:
+                if cancel(): raise Cancelled()
+                if path not in seen:
+                    seen.add(path)
+                    yield path
+
+    def measure(self, cancel=lambda: False, progress=lambda a,b,c: None):
+        sizes = {}
+        total = 0
+        for path in self.media_files(cancel):
+            sizes[path] = path.stat().st_size
+            if cancel(): raise Cancelled()
+            total += sizes[path]
+            progress(len(sizes), 0, path.name)
+        seen = set(sizes)
+        for plugin in self.plugins:
+            if cancel(): raise Cancelled()
+            path = Path(plugin.source)
+            if plugin.source and plugin.status == '就绪' and path not in seen:
+                total += path.stat().st_size
+                seen.add(path)
+                if cancel(): raise Cancelled()
+        return sizes, total
 
     @property
     def plugin_blockers(self):
@@ -149,7 +175,9 @@ def resolve(raw, base):
         raise ValueError('project_directory 无法解析，相对素材路径需手动处理')
     return p if p.is_absolute() else base / p
 
-def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None):
+def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None):
+    from media_scan import MediaIndex
+    media_index = media_index or MediaIndex(cancel, snapshot)
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
     text, enc = read_script(path)
@@ -183,22 +211,15 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                 matches = list(SEQUENCE.finditer(source.name))
                 if len(matches) > 1: raise ValueError('多个序列占位符，需手动处理')
                 if matches:
-                    m = matches[0]; tok = m.group(); width = (int(m.group(1)) if m.group(1) else None) if tok.startswith('%') else (4 if tok == '<UDIM>' else len(tok))
-                    digits = r'\d+' if width is None else rf'\d{{{width}}}'
-                    pattern = re.compile(re.escape(source.name[:m.start()])+f'(-?{digits})'+re.escape(source.name[m.end():]))
-                    numbers = []
-                    if source.parent.is_dir():
-                        for p in sorted(source.parent.iterdir()):
-                            if cancel(): raise Cancelled()
-                            found = pattern.fullmatch(p.name)
-                            if found and snapshot: snapshot.watch(p)
-                            if found and p.is_file(): a.files.append(p); numbers.append(int(found.group(1)))
+                    m = matches[0]; tok = m.group()
+                    files, numbers = media_index.matches(source, m)
+                    a.files = list(files)
                     if numbers and tok != '<UDIM>':
                         first = int(k.get('first',Token(str(min(numbers)),0,0)).value)
                         last = int(k.get('last',Token(str(max(numbers)),0,0)).value)
                         if last-first <= 1000000: a.missing = sorted(set(range(first,last+1))-set(numbers))
                     a.note = '收集目录中所有匹配帧'+(f'；声明范围缺 {len(a.missing)} 帧' if a.missing else '')
-                elif source.is_file(): a.files = [source]
+                elif media_index.is_file(source): a.files = [source]
                 a.status = '缺帧' if a.missing else ('就绪' if a.files else '缺失')
                 if snapshot:
                     for file in a.files: snapshot.watch(file)
@@ -210,11 +231,13 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
 def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None):
     from gizmo import scan_dependencies
     from scan_cache import Snapshot
+    from media_scan import MediaIndex
     snapshot = Snapshot(cancel) if context else None
-    plan = _scan_media(path, cancel, progress, snapshot=snapshot)
+    media_index = MediaIndex(cancel, snapshot)
+    plan = _scan_media(path, cancel, progress, snapshot=snapshot, media_index=media_index)
     plan.snapshot = snapshot
     plan.automatic_plugins = automatic_plugins
-    scan_dependencies(plan, cancel, progress, context=context)
+    scan_dependencies(plan, cancel, progress, context=context, media_index=media_index)
     return plan
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
@@ -233,14 +256,16 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     # Reserve the final name immediately; the marker guards unfinished packages.
     stage = target
     edits, copied, rows, hashes = {}, set(), [], {}
-    total = len({p for a in plan.assets for p in a.files}); done = 0
+    total = 0; done = 0
     try:
         marker = stage/'PACKAGING_INCOMPLETE.txt'
         marker.write_text('打包尚未完成，请勿交付此目录。\n',encoding='utf-8')
+        files = list(plan.media_files(cancel))
+        total = len(files)
         copied_bytes = 0
         total_bytes = 0
         if byte_progress is not None:
-            for source_file in {p for a in plan.assets for p in a.files}:
+            for source_file in files:
                 if cancel(): raise Cancelled()
                 total_bytes += source_file.stat().st_size
             byte_progress(0, total_bytes, '准备复制')

@@ -35,7 +35,7 @@ def digest_file(path, cancel=lambda: False, progress=None):
 
 
 def default_paths():
-    return [Path(os.path.expandvars(p.strip('"'))) for p in os.environ.get('NUKE_PATH', '').split(os.pathsep) if p.strip()] + [Path.home() / '.nuke']
+    return [Path.home() / '.nuke'] + [Path(os.path.expandvars(p.strip('"'))) for p in os.environ.get('NUKE_PATH', '').split(os.pathsep) if p.strip()]
 
 
 def index_plugins(paths, cancel, progress, *, observe=None):
@@ -49,26 +49,22 @@ def index_plugins(paths, cancel, progress, *, observe=None):
         if not root.is_dir():
             errors.append(f'插件目录无法访问：{root}')
             continue
-        def failed(error):
-            errors.append(f'插件目录读取失败：{error.filename}')
-        for directory, dirs, files in os.walk(root, onerror=failed, followlinks=False):
-            if cancel():
-                raise Cancelled()
-            current = Path(directory).resolve()
-            if observe: observe(current)
-            if current in visited:
-                dirs[:] = []
-                continue
-            visited.add(current)
-            dirs[:] = sorted(d for d in dirs if d not in {'__pycache__', '.git'})
-            # Observe children before os.walk enumerates them on the next iteration.
-            if observe:
-                for name in dirs: observe(current / name)
-            progress(0, 0, f'查找插件：{current.name}')
-            for name in sorted(files):
-                file = current / name
-                if file.suffix.lower() in {'.gizmo', '.dll', '.so', '.dylib'}:
-                    index.setdefault(file.stem.casefold(), []).append(file)
+        if root in visited: continue
+        visited.add(root)
+        progress(0, 0, f'查找插件：{root.name}')
+        try:
+            files = []
+            # Nuke searches registered directories, not arbitrary backup subfolders.
+            with os.scandir(root) as entries:
+                for entry in entries:
+                    if cancel(): raise Cancelled()
+                    file = Path(entry.path)
+                    if file.suffix.lower() in {'.gizmo', '.dll', '.so', '.dylib'} and entry.is_file():
+                        files.append(file)
+            for file in sorted(files):
+                index.setdefault(file.stem.casefold(), []).append(file)
+        except OSError as error:
+            errors.append(f'插件目录读取失败：{error.filename or root}')
     return index, errors
 
 
@@ -148,7 +144,7 @@ def code_dependencies(text):
     return list(dict.fromkeys(reasons))
 
 
-def scan_dependencies(plan, cancel, progress, *, context=None):
+def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None):
     from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs
     from plugin_paths import discover_paths
     plan.warnings.append('已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。')
@@ -159,6 +155,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
     roots = [p for p in roots if p != Path.home() / '.nuke' or p.exists()]
     found, active, custom_knobs = {}, [], {}
     plan.documents[str(plan.script)] = (plan.text, plan.encoding, hashlib.sha256(plan.text.encode(plan.encoding)).hexdigest())
+    plan.plugin_errors.extend(code_dependencies(plan.text))
 
     def references(text):
         for cls, pos, body in node_blocks(text):
@@ -168,6 +165,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
 
     root_references = list(references(plan.text))
     if not root_references:
+        plan.warnings.extend(plan.plugin_errors)
         return
     if context:
         roots, index, index_errors, plan.plugin_snapshot = context.plugin_index(roots, cancel, progress)
@@ -228,7 +226,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
             plugin.status, plugin.note = '待核对', 'Gizmo 嵌套超过 100 层，请检查依赖'
             return
         try:
-            nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot)
+            nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot, media_index=media_index)
             validate_definition(nested.text)
             plugin.sha256 = hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest()
             plan.documents[str(source)] = (nested.text, nested.encoding, plugin.sha256)
@@ -250,7 +248,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
         visit(name, f'{plan.script.name} / {node}')
     # Rescan with the file controls declared by the collected Gizmo definitions.
     # This includes overrides saved on each instance, not only template defaults.
-    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot)
+    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot, media_index=media_index)
     if hashlib.sha256(rescanned.text.encode(rescanned.encoding)).hexdigest() != plan.documents[str(plan.script)][2]:
         plan.plugin_errors.append('扫描过程中工程发生变化，请重新扫描')
     plan.assets = rescanned.assets
@@ -260,7 +258,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
         mapping = dict(custom_knobs)
         mapping.update({'Gizmo': custom_knobs[plugin.name], 'Group': custom_knobs[plugin.name]})
         try:
-            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot)
+            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot, media_index=media_index)
             if hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest() != plugin.sha256:
                 raise ValueError('扫描过程中插件内容变化')
             for asset in nested.assets:
@@ -286,7 +284,6 @@ def scan_dependencies(plan, cancel, progress, *, context=None):
                 changed = True
     if plan.plugins:
         (plan.warnings if plan.automatic_plugins else plan.plugin_errors).extend(index_errors)
-        plan.plugin_errors.extend(code_dependencies(plan.text))
     for plugin in plan.plugins:
         if plugin.status != '就绪':
             plan.warnings.append(f'{plugin.name} × {len(plugin.used_by)}：{plugin.status}；{plugin.note}')

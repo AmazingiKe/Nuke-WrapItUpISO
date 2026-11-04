@@ -255,7 +255,7 @@ class WindowTests(unittest.TestCase):
         selected = other / 'Demo.gizmo'
         selected.write_text('Gizmo {\n name Demo\n}\nBlur {\n name blur\n}\nend_group\n')
         self.source.write_text('Demo {\n name Demo1\n}\n')
-        self.default_paths.return_value = [plugins]
+        self.default_paths.return_value = [plugins, other]
         self.window.add([self.source])
         self.wait_finished()
         self.window.scan_only()
@@ -395,6 +395,46 @@ class WindowTests(unittest.TestCase):
         bar.set_projects(0, 2)
         self.assertEqual(bar.fractions(), (0, 0))
 
+    def test_progress_has_contiguous_colors_and_smooth_completion(self):
+        bar = self.window.progress
+        bar.set_projects(0, 10)
+        with patch('app.time.monotonic', return_value=10):
+            bar.set_projects(3, 10)
+        with patch('app.time.monotonic', return_value=10.08):
+            bar.transition_tick()
+        dark = bar.coords('projects')
+        light = bar.coords('tasks')
+        self.assertGreater(dark[2], 0)
+        self.assertLess(dark[2], bar.winfo_width() * 0.3)
+        self.assertEqual(dark[2], light[0])
+        self.assertEqual(bar.find_withtag('separators'), ())
+        self.assertTrue(all(bar.type(item) == 'rectangle' for item in bar.find_all()))
+        with patch('app.time.monotonic', return_value=10.2):
+            bar.transition_tick()
+        self.assertAlmostEqual(bar.coords('projects')[2], bar.winfo_width() * 0.3)
+        bar.set_tasks(0, 0)
+        bar.finish()
+        self.assertIsNone(bar.animation_id)
+        self.assertIsNone(bar.transition_id)
+
+    def test_unknown_progress_stays_joined_and_reset_cancels_tweens(self):
+        bar = self.window.progress
+        bar.set_projects(2, 5)
+        bar.set_tasks(0, 0)
+        pulse_timer = bar.animation_id
+        bar.set_tasks(0, 0)
+        self.assertEqual(bar.animation_id, pulse_timer)
+        with patch('app.time.monotonic', return_value=time.monotonic() + 1):
+            bar.transition_tick()
+        self.assertEqual(bar.coords('projects')[2], bar.coords('tasks')[0])
+        self.assertGreater(bar.coords('tasks')[2], bar.coords('tasks')[0])
+        bar.set_tasks(4, 10)
+        self.assertIsNone(bar.animation_id)
+        bar.set_projects(0, 5)
+        self.assertIsNone(bar.transition_id)
+        self.assertEqual(bar.coords('projects')[2], 0)
+        self.assertEqual(bar.coords('tasks')[2], 0)
+
     def test_copy_progress_counts_files_and_retains_partial_file_updates(self):
         from app import Worker
         from queue import Queue
@@ -504,6 +544,32 @@ class WindowTests(unittest.TestCase):
         report = json.loads(next((self.folder / 'out').rglob('report.json')).read_text(encoding='utf-8'))
         self.assertFalse(report['explicit_media_complete'])
         self.assertEqual(report['assets'][0]['files'], 0)
+
+    def test_rescan_and_failed_repack_keep_previous_successful_output(self):
+        self.window.add([self.source]); self.wait_finished()
+        self.window.output.set(str(self.folder/'out'))
+        self.window.pack(); self.wait_finished()
+        target = self.window.packaged_paths[self.source]
+        self.window.scan_only(); self.wait_finished()
+        self.assertEqual(self.window.packaged_paths[self.source], target)
+        self.assertTrue(self.window.open_readme_button.instate(['!disabled']))
+        with patch('app.package', side_effect=PermissionError()):
+            self.window.pack(); self.wait_finished()
+        self.assertEqual(self.window.packaged_paths[self.source], target)
+        with patch('app.os.startfile') as opened:
+            self.window.open_result(readme=True)
+            opened.assert_called_with(str(target/'README.md'))
+        self.window.clear()
+        self.assertFalse(self.window.packaged_paths)
+        self.assertTrue(self.window.open_readme_button.instate(['disabled']))
+
+    def test_progress_keeps_existing_per_phase_semantics(self):
+        bar=self.window.progress
+        bar.set_projects(2,5)
+        self.window.show_progress('复制文件',10,10,'done')
+        self.assertAlmostEqual(bar.fractions()[1],0.6)
+        self.window.show_progress('校验文件',0,10,'begin')
+        self.assertEqual(bar.fractions(),(0.4,0.4))
 
 
 if __name__ == '__main__':

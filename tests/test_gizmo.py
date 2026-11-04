@@ -1,4 +1,5 @@
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import runpy
@@ -28,6 +29,8 @@ class GizmoTests(unittest.TestCase):
     def gizmo(self, name, children='', folder=None, knobs=''):
         path = (folder or self.plugins) / (name + '.gizmo')
         path.parent.mkdir(parents=True, exist_ok=True)
+        if folder and path.parent not in self.default_paths.return_value:
+            self.default_paths.return_value.append(path.parent)
         path.write_text('Gizmo {\n name ' + name + '\n' + knobs + '}\n' + children + 'end_group\n', encoding='utf-8')
         return path
 
@@ -262,10 +265,15 @@ class GizmoTests(unittest.TestCase):
 
     def test_partial_directory_access_failure_blocks_even_found_plugin(self):
         self.gizmo('Outer')
-        def walk_with_failure(root, onerror, **kwargs):
-            yield str(root), [], ['Outer.gizmo']
-            onerror(PermissionError(13, 'access denied', str(root / 'unreadable')))
-        with patch('gizmo.os.walk', side_effect=walk_with_failure):
+        original = os.scandir
+        @contextmanager
+        def read_with_failure(root):
+            with original(root) as entries:
+                def partial():
+                    yield next(entries)
+                    raise PermissionError(13, 'access denied', str(root))
+                yield partial()
+        with patch('gizmo.os.scandir', side_effect=read_with_failure):
             plan = self.scan()
         self.assertIn('插件目录读取失败', ' '.join(plan.plugin_errors))
         with self.assertRaises(RuntimeError):

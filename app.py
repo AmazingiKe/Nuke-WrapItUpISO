@@ -1,6 +1,7 @@
 """Tkinter UI; workers communicate with the UI through a queue."""
 from pathlib import Path
 from queue import Empty, Queue
+import math
 import os
 import threading
 import time
@@ -105,7 +106,11 @@ class CombinedProgress(tk.Canvas):
         self.projects_total = 1
         self.task_fraction = 0
         self.animation_id = None
+        self.transition_id = None
+        self.display_fractions = (0, 0)
         self.pulse = 0
+        self.create_rectangle(0, 0, 0, 0, fill='#9ec8e8', outline='', tags='tasks')
+        self.create_rectangle(0, 0, 0, 0, fill='#245780', outline='', tags='projects')
         self.bind('<Configure>', lambda event: self.redraw())
 
     def set_projects(self, done, total):
@@ -113,16 +118,22 @@ class CombinedProgress(tk.Canvas):
         self.projects_total = max(1, total)
         self.projects_done = max(0, min(done, self.projects_total))
         self.task_fraction = 0
-        self.redraw()
+        if not self.projects_done:
+            self.display_fractions = self.fractions()
+            self.redraw()
+        else:
+            self.transition_to(self.fractions())
 
     def set_tasks(self, done, total):
+        if not total and self.animation_id is not None:
+            return
         self.stop_animation()
         self.task_fraction = max(0, min(done / total, 1)) if total else 0
         if not total and self.projects_done < self.projects_total:
             self.pulse = 0
             self.animate()
         else:
-            self.redraw()
+            self.transition_to(self.fractions())
 
     def fractions(self):
         dark = self.projects_done / self.projects_total
@@ -131,36 +142,52 @@ class CombinedProgress(tk.Canvas):
 
     def redraw(self):
         width, height = self.winfo_width(), self.winfo_height()
-        dark, light = self.fractions()
-        self.delete('all')
-        if self.animation_id is not None:
-            segment = width / self.projects_total
-            start = width * dark + self.pulse * segment * 0.7
-            self.create_rectangle(start, 0, start + segment * 0.3, height,
-                                  fill='#9ec8e8', outline='', tags='tasks')
-        else:
-            self.create_rectangle(width * dark, 0, width * light, height,
-                                  fill='#9ec8e8', outline='', tags='tasks')
-        self.create_rectangle(0, 0, width * dark, height,
-                              fill='#245780', outline='', tags='projects')
-        if self.projects_total <= 30:
-            for index in range(1, self.projects_total):
-                x = width * index / self.projects_total
-                self.create_line(x, 0, x, height, fill='#ffffff', tags='separators')
+        dark, light = self.display_fractions
+        # Both fills share the exact same edge; no dividers, borders or gaps.
+        edge = width * dark
+        self.coords('tasks', edge, 0, width * light, height)
+        self.coords('projects', 0, 0, edge, height)
+
+    def transition_to(self, target):
+        if self.transition_id is not None:
+            self.after_cancel(self.transition_id)
+            self.transition_id = None
+        self.transition_start = self.display_fractions
+        self.transition_target = target
+        self.transition_time = time.monotonic()
+        self.transition_tick()
+
+    def transition_tick(self):
+        if self.transition_id is not None:
+            self.after_cancel(self.transition_id)
+            self.transition_id = None
+        elapsed = max(0, min(1, (time.monotonic() - self.transition_time) / 0.16))
+        ease = 1 - (1 - elapsed) ** 3
+        self.display_fractions = tuple(start + (end - start) * ease
+                                       for start, end in zip(self.transition_start, self.transition_target))
+        self.redraw()
+        if elapsed < 1 and self.transition_start != self.transition_target:
+            self.transition_id = self.after(16, self.transition_tick)
 
     def animate(self):
-        self.pulse = (self.pulse + 0.06) % 1
+        self.pulse = (self.pulse + 0.04) % 1
+        dark, _ = self.fractions()
+        span = (0.3 - 0.15 * math.cos(self.pulse * math.tau)) / self.projects_total
+        self.transition_to((dark, min(1, dark + span)))
         self.animation_id = self.after(60, self.animate)
-        self.redraw()
 
     def stop_animation(self):
         if self.animation_id is not None:
             self.after_cancel(self.animation_id)
             self.animation_id = None
+        if self.transition_id is not None:
+            self.after_cancel(self.transition_id)
+            self.transition_id = None
 
     def finish(self):
         self.stop_animation()
         self.task_fraction = 0
+        self.display_fractions = self.fractions()
         self.redraw()
 
     def destroy(self):
@@ -244,15 +271,15 @@ class Worker(threading.Thread):
                                 progress=lambda *values: self.report_progress('扫描素材与插件', *values),
                                 reuse=bool(self.output), scanner=scan)
                     self.report_progress('统计素材', 0, 0, path.name)
-                    size = plan.size
+                    file_sizes, size = plan.measure(self.cancelled.is_set,
+                        progress=lambda *values: self.report_progress('统计素材', *values))
                     if self.cancelled.is_set():
                         raise Cancelled()
                     self.emit('scanned', plan, size)
                     if self.output:
                         self.emit('project_state', path, '打包中')
                         self.report_progress('准备打包', 0, 0, path.name)
-                        files = dict.fromkeys(file for asset in plan.assets for file in asset.files)
-                        self.copy_sizes = [file.stat().st_size for file in files]
+                        self.copy_sizes = list(file_sizes.values())
                         self.copied_files = self.copy_bytes = self.file_start_bytes = 0
                         self.meter.reset()
                         target = package(
@@ -456,6 +483,8 @@ class Window(TkinterDnD.Tk):
         self.open_output_button = ttk.Button(log_header, text='打开输出', padding=(5, 0),
                                              command=self.open_result, state='disabled')
         self.open_output_button.pack(side='right', padx=4)
+        self.tooltips.append(ToolTip(self.open_output_button, '打开所选工程上一次成功打包的目录'))
+        self.tooltips.append(ToolTip(self.open_readme_button, '查看所选工程上一次成功打包的 README'))
         status_header = ttk.Frame(status_frame, height=round(24 * scale))
         status_header.pack(fill='x', pady=(0, 4))
         status_header.pack_propagate(False)
@@ -654,7 +683,6 @@ class Window(TkinterDnD.Tk):
         if not output:
             self.session = ScanSession()
         self.plans.clear()
-        self.packaged_paths.clear()
         self.project_errors.clear()
         for path in self.paths:
             self.project_table.item(str(path), values=(path.name, '等待扫描', '—'))

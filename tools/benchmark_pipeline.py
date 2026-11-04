@@ -76,6 +76,8 @@ def main():
             directory = plugins / f'category{index:03}'
             directory.mkdir()
             (directory / f'Dummy{index}.gizmo').write_text('Gizmo {\n}\nend_group\n')
+        (plugins / 'init.py').write_text('import nuke\n' + ''.join(
+            f"nuke.pluginAppendPath('category{index:03}')\n" for index in range(300)))
         (plugins / 'Demo.gizmo').write_text('Gizmo {\n}\nend_group\n')
         for index in range(8):
             (scripts / f'shot{index}.nk').write_text('Read {\n file ../source_media/plate.exr\n}\nDemo {\n}\n')

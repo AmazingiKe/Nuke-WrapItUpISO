@@ -162,33 +162,41 @@ class StartupReader:
 def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, observe=None):
     from core import Cancelled
     result = Discovery()
-    seen = set()
-    pending = []
-    def add(path, front=False):
+    seen, processed = set(), set()
+
+    def register(path, before=None):
         path = Path(path).expanduser().resolve()
         if path in seen:
-            return
+            return None
         if len(seen) >= 512:
             raise Unknown('自动发现目录超过 512 个')
         seen.add(path)
-        pending.append(path)
-        if front:
-            result.paths.insert(0, path)
+        if before is not None:
+            result.paths.insert(result.paths.index(before), path)
         else:
             result.paths.append(path)
+        return path
+
     for root in roots:
-        add(root)
-    index = 0
-    while index < len(pending):
+        register(root)
+
+    def process(directory, depth=0):
         if cancel():
             raise Cancelled()
-        directory = pending[index]
-        index += 1
+        if directory in processed: return
+        processed.add(directory)
+        if depth >= 128:
+            result.errors.append(f'插件启动目录嵌套过深：{directory}')
+            return
         source = directory / 'init.py'
         if observe: observe(source, content=True)
         if not source.is_file():
-            continue
+            return
         progress(0, 0, f'读取插件配置：{directory.name}')
+        added = []
+        def add(path, front=False):
+            path = register(path, before=directory if front else None)
+            if path is not None: added.append(path)
         try:
             if source.stat().st_size > 1024 * 1024:
                 raise Unknown('配置文件超过 1 MiB')
@@ -197,5 +205,10 @@ def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, 
             StartupReader(source, result, add, cancel).statements(tree.body)
         except (OSError, SyntaxError, UnicodeError, ValueError, RecursionError) as error:
             result.errors.append(f'插件配置无法解析：{source} · {error}')
+        # Nuke executes each init completely, then visits its new paths in reverse.
+        for path in reversed(added): process(path, depth + 1)
+
+    # Initial search order is preserved; startup execution runs from low to high priority.
+    for directory in reversed(result.paths.copy()): process(directory)
     result.errors = list(dict.fromkeys(result.errors))
     return result
