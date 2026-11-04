@@ -116,6 +116,9 @@ class Plan:
     plugin_search_errors: list = field(default_factory=list)
     base: Path | None = None
     automatic_plugins: bool = False
+    snapshot: object = None
+    plugin_snapshot: object = None
+    cache_roots: tuple = ()
     @property
     def size(self):
         return sum(p.stat().st_size for p in {p for a in self.assets for p in a.files}) + sum(
@@ -146,8 +149,9 @@ def resolve(raw, base):
         raise ValueError('project_directory 无法解析，相对素材路径需手动处理')
     return p if p.is_absolute() else base / p
 
-def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None):
+def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None):
     path = Path(path).resolve()
+    if snapshot: snapshot.watch(path, content=True)
     text, enc = read_script(path)
     blocks = [(cls, knobs(body, pos)) for cls, pos, body in node_blocks(text)]
     progress(0, len(blocks), '解析工程完成')
@@ -173,6 +177,9 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
             a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls); assets.append(a)
             try:
                 source = resolve(t.value, base).resolve(); a.source = str(source)
+                if snapshot:
+                    snapshot.watch(source)
+                    snapshot.watch(source.parent)
                 matches = list(SEQUENCE.finditer(source.name))
                 if len(matches) > 1: raise ValueError('多个序列占位符，需手动处理')
                 if matches:
@@ -184,6 +191,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                         for p in sorted(source.parent.iterdir()):
                             if cancel(): raise Cancelled()
                             found = pattern.fullmatch(p.name)
+                            if found and snapshot: snapshot.watch(p)
                             if found and p.is_file(): a.files.append(p); numbers.append(int(found.group(1)))
                     if numbers and tok != '<UDIM>':
                         first = int(k.get('first',Token(str(min(numbers)),0,0)).value)
@@ -192,19 +200,24 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                     a.note = '收集目录中所有匹配帧'+(f'；声明范围缺 {len(a.missing)} 帧' if a.missing else '')
                 elif source.is_file(): a.files = [source]
                 a.status = '缺帧' if a.missing else ('就绪' if a.files else '缺失')
+                if snapshot:
+                    for file in a.files: snapshot.watch(file)
             except (ValueError,OSError) as e: a.status = '待处理'; a.note = str(e)
         progress(index, len(blocks), name)
     return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)),base=base)
 
 
-def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False):
+def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None):
     from gizmo import scan_dependencies
-    plan = _scan_media(path, cancel, progress)
+    from scan_cache import Snapshot
+    snapshot = Snapshot(cancel) if context else None
+    plan = _scan_media(path, cancel, progress, snapshot=snapshot)
+    plan.snapshot = snapshot
     plan.automatic_plugins = automatic_plugins
-    scan_dependencies(plan, cancel, progress)
+    scan_dependencies(plan, cancel, progress, context=context)
     return plan
 
-def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None):
+def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
     from gizmo import check_sources, finish_bundle
     from package_readme import render_package_readme
     if plan.plugin_blockers:
@@ -272,7 +285,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         text = plan.text
         for start,end,value in sorted(edits.get(str(plan.script), []),reverse=True): text = text[:start]+value+text[end:]
         with (stage/plan.script.name).open('w',encoding=plan.encoding,newline='') as f: f.write(text)
-        plugin_report = finish_bundle(plan, stage, edits, hashes, cancel)
+        plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress)
         report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')

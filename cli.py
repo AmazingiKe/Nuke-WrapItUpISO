@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
-from core import scan, package
+from core import package
+from scan_cache import ScanSession
 from app_version import VERSION
 
 def main():
@@ -10,11 +11,12 @@ def main():
     args=parser.parse_args()
     if not args.scan and not args.output: parser.error('打包需要 --output，或使用 --scan')
     failures=0
+    session = ScanSession()
     for source in args.scripts:
         p=Path(source); paths=sorted(p.rglob('*.nk')) if p.is_dir() else [p]
         for path in paths:
             try:
-                plan=scan(path, automatic_plugins=True); print(f'{path}: {len(plan.assets)} references, {plan.size/1048576:.1f} MiB')
+                plan=session.scan(path); print(f'{path}: {len(plan.assets)} references, {plan.size/1048576:.1f} MiB')
                 for a in plan.assets: print(f'  {a.status}: {a.node}.{a.knob} {a.raw} {a.note}')
                 for w in plan.warnings: print('  Warning:',w)
                 for plugin in plan.plugins: print(f'  {plugin.status}: {plugin.name} {plugin.source} {plugin.note}')

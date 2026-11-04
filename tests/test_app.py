@@ -56,12 +56,14 @@ class WindowTests(unittest.TestCase):
         data = self.window.tk.call('list', str(self.source), str(self.folder))
         # Tcl event payload uses braces for paths containing spaces.
         self.window.on_drop(SimpleNamespace(data=data))
+        self.wait_finished()
         self.assertEqual(self.window.paths, [self.source.resolve()])
         self.window.clear()
         self.assertEqual(self.window.paths, [])
 
     def test_scan_and_package_from_window(self):
         self.window.add([self.folder, self.source, self.folder / 'ignored.txt'])
+        self.wait_finished()
         self.window.scan_only()
         self.wait_finished()
         rows = self.window.table.get_children()
@@ -97,6 +99,7 @@ class WindowTests(unittest.TestCase):
             self.assertEqual(info.call_count, 2)
         with patch('app.ask_projects', return_value=[self.source]):
             self.window.choose_projects()
+            self.wait_finished()
         with patch('app.filedialog.askdirectory', return_value=str(self.folder)):
             self.window.choose_output()
         self.assertEqual(self.window.paths, [self.source.resolve()])
@@ -114,6 +117,7 @@ class WindowTests(unittest.TestCase):
         a.write_text('Root {\n}\n'); b.write_text('Root {\n}\n')
         with patch('app.ask_projects', return_value=[first, second, self.source, a, empty]):
             self.window.add_project_button.invoke()
+            self.wait_finished()
         self.assertEqual(set(self.window.paths), {a.resolve(), b.resolve(), self.source.resolve()})
         self.assertIn('未找到 .nk', self.log())
         labels = [str(button.cget('text')) for button in self.window.controls]
@@ -122,6 +126,7 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(self.window.add_project_button.cget('image'))
         with patch('app.ask_projects', return_value=[]):
             self.window.choose_projects()
+            self.wait_finished()
         self.assertEqual(len(self.window.paths), 3)
 
 
@@ -142,6 +147,7 @@ class WindowTests(unittest.TestCase):
         broken = self.folder / 'broken.nk'
         broken.write_text('Read {', encoding='utf-8')
         self.window.add([broken, self.source])
+        self.wait_finished()
         self.window.scan_only()
         self.wait_finished()
         self.assertIn('工程内容无法解析', self.log())
@@ -164,6 +170,7 @@ class WindowTests(unittest.TestCase):
             raise Cancelled()
 
         self.window.add([self.source])
+        self.wait_finished()
         with patch('app.scan', side_effect=slow_scan):
             self.window.scan_only()
             self.assertTrue(entered.wait(2))
@@ -189,6 +196,7 @@ class WindowTests(unittest.TestCase):
             raise Cancelled()
 
         self.window.add([self.source])
+        self.wait_finished()
         with patch('app.scan', side_effect=slow_scan):
             self.window.scan_only()
             self.assertTrue(entered.wait(2))
@@ -210,6 +218,7 @@ class WindowTests(unittest.TestCase):
         second = second_dir / self.source.name
         second.write_text('Read {\n file missing.exr\n name other\n}\nVendorGizmo {\n name custom\n}\n', encoding='utf-8')
         self.window.add([self.source, second])
+        self.wait_finished()
         self.assertEqual(len(self.window.project_table.get_children()), 2)
         self.assertEqual(len(self.window.table.get_children()), 0)
         self.assertIn('未扫描', self.window.dependencies.get('1.0', 'end'))
@@ -248,6 +257,7 @@ class WindowTests(unittest.TestCase):
         self.source.write_text('Demo {\n name Demo1\n}\n')
         self.default_paths.return_value = [plugins]
         self.window.add([self.source])
+        self.wait_finished()
         self.window.scan_only()
         self.wait_finished()
         self.assertIn('需核对', self.window.project_table.item(str(self.source), 'values'))
@@ -273,6 +283,7 @@ class WindowTests(unittest.TestCase):
         (external / 'Demo.gizmo').write_text('Gizmo {\n name Demo\n}\nend_group\n')
         self.source.write_text('Demo {\n name demo\n}\nMissing {\n name missing\n}\n')
         self.window.add([self.source])
+        self.wait_finished()
         self.window.output.set(str(self.folder / 'delivery'))
         with patch('gizmo.default_paths', return_value=[startup]), patch('app.messagebox.showerror') as error:
             self.window.pack()
@@ -287,6 +298,7 @@ class WindowTests(unittest.TestCase):
     def test_failed_scan_shows_error_for_selected_project(self):
         self.source.write_text('Read {', encoding='utf-8')
         self.window.add([self.source])
+        self.wait_finished()
         self.window.scan_only()
         self.wait_finished()
         self.assertIn('失败', self.window.project_table.item(str(self.source.resolve()), 'values'))
@@ -295,6 +307,7 @@ class WindowTests(unittest.TestCase):
 
     def test_pack_errors_are_readable_and_keep_full_details(self):
         self.window.add([self.source])
+        self.wait_finished()
         self.window.output.set(str(self.folder / 'delivery'))
         cases = [
             (FileExistsError('existing output details'), '输出已存在'),
@@ -314,6 +327,7 @@ class WindowTests(unittest.TestCase):
     def test_selected_asset_shows_status_and_resolved_path_below_table(self):
         self.source.write_text('Read {\n file missing.exr\n name missing_plate\n}\n', encoding='utf-8')
         self.window.add([self.source])
+        self.wait_finished()
         self.window.scan_only()
         self.wait_finished()
         self.window.table.selection_set(self.window.table.get_children()[0])
@@ -338,6 +352,7 @@ class WindowTests(unittest.TestCase):
             raise Cancelled()
 
         self.window.add([self.source])
+        self.wait_finished()
         with patch('app.scan', side_effect=slow_scan):
             self.window.scan_only()
             try:
@@ -396,6 +411,99 @@ class WindowTests(unittest.TestCase):
         while not worker.events.empty():
             events.append(worker.events.get_nowait())
         self.assertEqual(events[-1][1][:3], ('复制文件', 1.5, 2))
+
+    def test_scan_then_pack_reuses_plan_and_exposes_verified_output(self):
+        import app
+        self.window.add([self.source])
+        self.wait_finished()
+        with patch('app.scan', wraps=app.scan) as scan:
+            self.window.scan_only(); self.wait_finished()
+            self.window.output.set(str(self.folder / 'delivery'))
+            self.window.pack(); self.wait_finished()
+            self.assertEqual(scan.call_count, 1)
+        target = self.window.packaged_paths[self.source]
+        self.assertTrue((target / 'README.md').is_file())
+        with patch('app.os.startfile') as opened:
+            self.window.open_result()
+            opened.assert_called_with(str(target))
+            self.window.open_result(readme=True)
+            opened.assert_called_with(str(target / 'README.md'))
+
+    def test_filter_copy_and_remove_selected_projects(self):
+        self.source.write_text('Read {\n file missing.exr\n}\nRead {\n file plate.exr\n}\n')
+        other = self.folder / 'other.nk'
+        other.write_text('Root {\n}\n')
+        self.window.add([self.source, other]); self.wait_finished()
+        self.window.scan_only(); self.wait_finished()
+        self.window.only_issues.set(True)
+        self.window.render_selected_project()
+        rows = self.window.table.get_children()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(self.window.table.set(rows[0], 'status'), '×')
+        self.window.table.selection_set(rows[0])
+        self.window.copy_asset_path()
+        self.assertEqual(self.window.clipboard_get(), str(self.folder / 'missing.exr'))
+        self.window.project_table.selection_set(str(self.source), str(other))
+        self.window.remove_selected()
+        self.assertEqual(self.window.paths, [])
+        self.assertEqual(self.window.session.plans, {})
+
+    def test_discovery_is_background_responsive_and_cancellable(self):
+        import project_discovery
+        entered, release = threading.Event(), threading.Event()
+        real_walk = project_discovery.os.walk
+        def slow_walk(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            yield from real_walk(*args, **kwargs)
+        with patch('project_discovery.os.walk', side_effect=slow_walk):
+            self.window.add([self.folder])
+            self.assertTrue(entered.wait(2))
+            tick = []
+            self.window.after(0, lambda: tick.append(True))
+            self.window.update()
+            self.assertTrue(tick)
+            self.assertTrue(self.window.busy())
+            self.window.stop()
+            release.set()
+            self.wait_finished()
+        self.assertFalse(self.window.cancel.instate(['!disabled']))
+        self.assertIn('取消', self.window.progress_text.get())
+
+    def test_rate_and_eta_are_measured_from_elapsed_copy_time(self):
+        from app import TransferMeter
+        meter = TransferMeter()
+        with patch('app.time.monotonic', return_value=10): meter.reset()
+        with patch('app.time.monotonic', return_value=12):
+            text = meter.describe(2 * 1048576, 10 * 1048576)
+        self.assertIn('1.0 MiB/s', text)
+        self.assertIn('8 秒', text)
+
+    def test_explicit_rescan_refreshes_and_failed_package_has_no_open_action(self):
+        import app
+        self.window.add([self.source]); self.wait_finished()
+        with patch('app.scan', wraps=app.scan) as scan:
+            self.window.scan_only(); self.wait_finished()
+            self.window.scan_only(); self.wait_finished()
+            self.assertEqual(scan.call_count, 2)
+        self.window.output.set(str(self.folder / 'out'))
+        with patch('app.package', side_effect=PermissionError()):
+            self.window.pack(); self.wait_finished()
+        self.assertEqual(self.window.packaged_paths, {})
+        self.assertTrue(self.window.open_readme_button.instate(['disabled']))
+
+    def test_changed_media_is_rescanned_before_packaging(self):
+        import app
+        self.window.add([self.source]); self.wait_finished()
+        self.window.scan_only(); self.wait_finished()
+        (self.folder / 'plate.exr').unlink()
+        self.window.output.set(str(self.folder / 'out'))
+        with patch('app.scan', wraps=app.scan) as scan:
+            self.window.pack(); self.wait_finished()
+            self.assertEqual(scan.call_count, 1)
+        report = json.loads(next((self.folder / 'out').rglob('report.json')).read_text(encoding='utf-8'))
+        self.assertFalse(report['explicit_media_complete'])
+        self.assertEqual(report['assets'][0]['files'], 0)
 
 
 if __name__ == '__main__':

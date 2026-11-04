@@ -15,7 +15,8 @@ import zlib
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import scan, package
+from core import package
+from scan_cache import ScanSession
 
 
 def verify(nuke, gui=False):
@@ -33,7 +34,10 @@ def verify(nuke, gui=False):
         script = source / 'test.nk'
         script.write_text('version 15.1 v5\nRoot {\n}\nOuter {\n inputs 0\n name Outer1\n}\n')
         with patch('gizmo.default_paths', return_value=[source]):
-            target = package(scan(script), root / 'delivery')
+            session = ScanSession()
+            plan = session.scan(script)
+            assert session.scan(script, reuse=True) is plan
+            target = package(plan, root / 'delivery')
         moved = root / '中文 moved package'
         target.rename(moved)
         assert root.resolve() in source.resolve().parents

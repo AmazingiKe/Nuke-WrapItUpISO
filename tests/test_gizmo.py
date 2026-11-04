@@ -198,7 +198,7 @@ class GizmoTests(unittest.TestCase):
         self.gizmo('Outer')
         plan = self.scan()
         from gizmo import finish_bundle
-        def corrupt(plan, stage, edits, hashes, cancel):
+        def corrupt(plan, stage, edits, hashes, cancel, verify_progress=None):
             (stage / 'bad.exr').write_bytes(b'wrong')
             hashes['bad.exr'] = hashlib.sha256(b'expected').hexdigest()
             return finish_bundle(plan, stage, edits, hashes, cancel)
@@ -308,7 +308,7 @@ class GizmoTests(unittest.TestCase):
             self.scan(cancel=lambda: stop, progress=progress)
         plan = self.scan()
         from gizmo import finish_bundle
-        def cancel_at_write(plan, stage, edits, hashes, cancel):
+        def cancel_at_write(plan, stage, edits, hashes, cancel, verify_progress=None):
             return finish_bundle(plan, stage, edits, hashes, lambda: True)
         with patch('gizmo.finish_bundle', side_effect=cancel_at_write):
             with self.assertRaises(Cancelled):

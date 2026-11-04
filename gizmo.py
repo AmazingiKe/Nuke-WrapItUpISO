@@ -18,9 +18,10 @@ class Plugin:
     sha256: str = ''
 
 
-def digest_file(path, cancel=lambda: False):
+def digest_file(path, cancel=lambda: False, progress=None):
     from core import Cancelled
     digest = hashlib.sha256()
+    done = 0
     with Path(path).open('rb') as stream:
         while True:
             if cancel():
@@ -29,19 +30,22 @@ def digest_file(path, cancel=lambda: False):
             if not chunk:
                 return digest.hexdigest()
             digest.update(chunk)
+            done += len(chunk)
+            if progress: progress(done)
 
 
 def default_paths():
     return [Path(os.path.expandvars(p.strip('"'))) for p in os.environ.get('NUKE_PATH', '').split(os.pathsep) if p.strip()] + [Path.home() / '.nuke']
 
 
-def index_plugins(paths, cancel, progress):
+def index_plugins(paths, cancel, progress, *, observe=None):
     from core import Cancelled
     index, errors, visited = {}, [], set()
     for root in paths:
         if cancel():
             raise Cancelled()
         root = Path(root).expanduser().resolve()
+        if observe: observe(root)
         if not root.is_dir():
             errors.append(f'插件目录无法访问：{root}')
             continue
@@ -51,11 +55,15 @@ def index_plugins(paths, cancel, progress):
             if cancel():
                 raise Cancelled()
             current = Path(directory).resolve()
+            if observe: observe(current)
             if current in visited:
                 dirs[:] = []
                 continue
             visited.add(current)
             dirs[:] = sorted(d for d in dirs if d not in {'__pycache__', '.git'})
+            # Observe children before os.walk enumerates them on the next iteration.
+            if observe:
+                for name in dirs: observe(current / name)
             progress(0, 0, f'查找插件：{current.name}')
             for name in sorted(files):
                 file = current / name
@@ -140,11 +148,13 @@ def code_dependencies(text):
     return list(dict.fromkeys(reasons))
 
 
-def scan_dependencies(plan, cancel, progress):
+def scan_dependencies(plan, cancel, progress, *, context=None):
     from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs
     from plugin_paths import discover_paths
     plan.warnings.append('已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。')
     roots = default_paths()
+    if plan.snapshot:
+        for root in roots: plan.snapshot.watch(root)
     # A missing default ~/.nuke is normal on a clean machine.
     roots = [p for p in roots if p != Path.home() / '.nuke' or p.exists()]
     found, active, custom_knobs = {}, [], {}
@@ -159,11 +169,14 @@ def scan_dependencies(plan, cancel, progress):
     root_references = list(references(plan.text))
     if not root_references:
         return
-    discovered = discover_paths(roots, cancel, progress)
-    roots = discovered.paths
+    if context:
+        roots, index, index_errors, plan.plugin_snapshot = context.plugin_index(roots, cancel, progress)
+    else:
+        discovered = discover_paths(roots, cancel, progress)
+        roots = discovered.paths
+        index, index_errors = index_plugins(roots, cancel, progress)
+        index_errors.extend(discovered.errors)
     plan.search_paths = [str(p) for p in roots]
-    index, index_errors = index_plugins(roots, cancel, progress)
-    index_errors.extend(discovered.errors)
     plan.plugin_search_errors = index_errors
 
     def visit(name, owner):
@@ -187,6 +200,9 @@ def scan_dependencies(plan, cancel, progress):
             plugin.status, plugin.note = '待核对', '节点名称无法安全映射为 Gizmo 文件名'
             return
         candidates = index.get(name.casefold(), [])
+        if plan.snapshot:
+            for candidate in candidates:
+                plan.snapshot.watch(candidate, content=candidate.suffix.lower() == '.gizmo')
         plugin.candidates = [str(p) for p in candidates]
         if not candidates:
             plugin.note = ('未找到对应文件，跳过收集并继续打包；也可能是未收录的内置节点。'
@@ -212,7 +228,7 @@ def scan_dependencies(plan, cancel, progress):
             plugin.status, plugin.note = '待核对', 'Gizmo 嵌套超过 100 层，请检查依赖'
             return
         try:
-            nested = _scan_media(source, cancel, base_override=plan.base)
+            nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot)
             validate_definition(nested.text)
             plugin.sha256 = hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest()
             plan.documents[str(source)] = (nested.text, nested.encoding, plugin.sha256)
@@ -234,7 +250,7 @@ def scan_dependencies(plan, cancel, progress):
         visit(name, f'{plan.script.name} / {node}')
     # Rescan with the file controls declared by the collected Gizmo definitions.
     # This includes overrides saved on each instance, not only template defaults.
-    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs)
+    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot)
     if hashlib.sha256(rescanned.text.encode(rescanned.encoding)).hexdigest() != plan.documents[str(plan.script)][2]:
         plan.plugin_errors.append('扫描过程中工程发生变化，请重新扫描')
     plan.assets = rescanned.assets
@@ -244,7 +260,7 @@ def scan_dependencies(plan, cancel, progress):
         mapping = dict(custom_knobs)
         mapping.update({'Gizmo': custom_knobs[plugin.name], 'Group': custom_knobs[plugin.name]})
         try:
-            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping)
+            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot)
             if hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest() != plugin.sha256:
                 raise ValueError('扫描过程中插件内容变化')
             for asset in nested.assets:
@@ -284,7 +300,7 @@ def check_sources(plan, cancel):
             raise DependencyError(f'扫描后文件发生变化，请重新扫描：{path}')
 
 
-def finish_bundle(plan, stage, edits, hashes, cancel):
+def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
     from core import DependencyError, Cancelled
     records = []
     if plan.plugins:
@@ -309,13 +325,26 @@ def finish_bundle(plan, stage, edits, hashes, cancel):
                             'candidates': plugin.candidates})
         write_loader(plan, stage)
     check_sources(plan, cancel)
-    # Verify copied bytes against the digest computed while reading the source.
-    for relative, expected in hashes.items():
-        if digest_file(stage / relative, cancel) != expected:
-            raise DependencyError(f'打包文件校验失败：{relative}')
+    # A single destination read both verifies the copy and supplies the report hash.
+    paths = {stage / relative for relative in hashes}
     for path in stage.rglob('*'):
-        if path.is_file() and path.name != 'PACKAGING_INCOMPLETE.txt':
-            hashes[path.relative_to(stage).as_posix()] = digest_file(path, cancel)
+        if cancel(): raise Cancelled()
+        if path.is_file() and path.name != 'PACKAGING_INCOMPLETE.txt': paths.add(path)
+    total = len(paths)
+    if verify_progress: verify_progress(0, total, '开始校验')
+    for done, path in enumerate(sorted(paths)):
+        relative = path.relative_to(stage).as_posix()
+        expected = hashes.get(relative)
+        if verify_progress:
+            size = path.stat().st_size
+            actual = digest_file(path, cancel, lambda count: verify_progress(
+                done + min(count / size, 0.999) if size else done, total, path.name))
+        else:
+            actual = digest_file(path, cancel)
+        if expected is not None and actual != expected:
+            raise DependencyError(f'打包文件校验失败：{relative}')
+        hashes[relative] = actual
+        if verify_progress: verify_progress(done + 1, total, path.name)
     return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers
             and not plan.plugin_search_errors and all(p.status == '就绪' for p in plan.plugins),
             'plugin_search_paths': plan.search_paths, 'file_hashes': hashes,

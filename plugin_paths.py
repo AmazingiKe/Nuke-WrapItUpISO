@@ -159,7 +159,7 @@ class StartupReader:
                 self.aliases.pop(child.id, None)
 
 
-def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None):
+def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, observe=None):
     from core import Cancelled
     result = Discovery()
     seen = set()
@@ -185,6 +185,7 @@ def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None):
         directory = pending[index]
         index += 1
         source = directory / 'init.py'
+        if observe: observe(source, content=True)
         if not source.is_file():
             continue
         progress(0, 0, f'读取插件配置：{directory.name}')
