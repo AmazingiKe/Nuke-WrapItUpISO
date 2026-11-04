@@ -310,8 +310,12 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         text = plan.text
         for start,end,value in sorted(edits.get(str(plan.script), []),reverse=True): text = text[:start]+value+text[end:]
         with (stage/plan.script.name).open('w',encoding=plan.encoding,newline='') as f: f.write(text)
+        original_name = plan.script.stem + '_original' + plan.script.suffix
+        shutil.copyfile(plan.script, stage/original_name)
+        hashes[original_name] = plan.documents[str(plan.script)][2]
         plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress)
         report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
+        report['original_path_script'] = original_name
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')
         if cancel(): raise Cancelled()

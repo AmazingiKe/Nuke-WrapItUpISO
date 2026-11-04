@@ -1,9 +1,35 @@
 import tempfile, unittest, json
 from unittest.mock import patch
 from pathlib import Path
-from core import scan, package, Cancelled
+from core import scan, package, Cancelled, DependencyError
 
 class PackagingTests(unittest.TestCase):
+    def test_corrupted_original_path_copy_fails_verification_and_cleans_output(self):
+        plan = scan(self.script)
+        with patch('core.shutil.copyfile', side_effect=lambda source, target: target.write_bytes(b'corrupt')):
+            with self.assertRaisesRegex(DependencyError, '打包文件校验失败'):
+                package(plan, self.root / 'corrupt')
+        self.assertEqual(list((self.root / 'corrupt').iterdir()), [])
+
+    def test_original_path_copy_preserves_source_bytes_and_is_reported(self):
+        import hashlib
+        for encoding in ('utf-8', 'utf-8-sig', 'gb18030'):
+            with self.subTest(encoding=encoding):
+                text = '# 中文原工程\r\nRead {\r\n file other/image.0001.exr\r\n name plate\r\n}\r\n'
+                original = text.encode(encoding)
+                self.script.write_bytes(original)
+                target = package(scan(self.script), self.root / encoding)
+                original_name = self.script.stem + '_original.nk'
+                self.assertEqual((target / original_name).read_bytes(), original)
+                self.assertEqual(self.script.read_bytes(), original)
+                self.assertIn('/media/', (target / self.script.name).read_bytes().decode(encoding))
+                report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+                self.assertEqual(report['original_path_script'], original_name)
+                self.assertEqual(report['file_hashes'][original_name], hashlib.sha256(original).hexdigest())
+                readme = (target / 'README.md').read_text(encoding='utf-8')
+                self.assertIn(original_name, readme)
+                self.assertIn('原始路径', readme)
+
     def test_scan_reports_node_progress(self):
         updates = []
         scan(self.script, progress=lambda *values: updates.append(values))

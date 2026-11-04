@@ -79,6 +79,7 @@ python -m PyInstaller --workpath tools/build --distpath tools/dist tools/NukeBat
 - 重写为 `"[file dirname [value root.name]]/media/..."`，移动时请搬走整个打包文件夹。
 - 缺失、动态路径保持原值，写入 `report.json`；有这些项时不能视为完整交付。
 - 交付目录生成 `README.md`，逐项列出素材、插件的打包结果（成功 / 部分成功 / 未成功），不展开原因；详细原因和完整路径保留在 `report.json`。
+- 同时输出两份工程：原文件名 `.nk` 使用打包后的素材路径；`project_original.nk`（原工程名加 `_original` 后缀）保留原工程的全部内容、路径、编码和换行，并纳入 SHA-256 校验。原路径版本供对照或在原环境中使用，仍依赖原素材与插件；相对路径需要原工程目录或原 `project_directory`。默认打开入口仍使用打包版。
 - 取消或复制失败会清理当前工程的未完成目录，已完成的其他工程保留；如果清理也被拒绝，将明确提示残留路径。
 - 已有同名打包目录时跳过并报错，不覆盖旧结果。
 
