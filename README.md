@@ -77,6 +77,7 @@ python -m PyInstaller --workpath tools/build --distpath tools/dist tools/NukeBat
 - 不收集 Write / DeepWrite 的渲染输出；不改变其输出路径。
 - 相对输入路径以固定的 Root `project_directory` 为基准，未设置则以 `.nk` 所在目录为基准。
 - 重写为 `"[file dirname [value root.name]]/media/..."`，移动时请搬走整个打包文件夹。
+- 素材子目录按节点名命名，例如 `media/Read_Plate/`；Group 内使用 `Group1_Read1`，Gizmo 内使用 `PluginName_Read1`。不同节点引用不同素材时分别存放；共享文件或重叠序列统一使用首次引用节点的目录，只复制一次。重名（含大小写差异）追加 `_2`、`_3`，同一节点的不同素材参数也按此规则区分。生成的目录名仅使用英文字母、数字、下划线和连字符，其他字符替换为下划线，空名回退为 `Media`；素材文件名保持原样。
 - 缺失、动态路径保持原值，写入 `report.json`；有这些项时不能视为完整交付。
 - 交付目录生成 `README.md`，逐项列出素材、插件的打包结果（成功 / 部分成功 / 未成功），不展开原因；详细原因和完整路径保留在 `report.json`。
 - 同时输出两份工程：原文件名 `.nk` 使用打包后的素材路径；`project_original.nk`（原工程名加 `_original` 后缀）保留原工程的全部内容、路径、编码和换行，并纳入 SHA-256 校验。原路径版本供对照或在原环境中使用，仍依赖原素材与插件；相对路径需要原工程目录或原 `project_directory`。默认打开入口仍使用打包版。

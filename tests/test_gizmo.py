@@ -50,6 +50,7 @@ class GizmoTests(unittest.TestCase):
         self.assertEqual(len(list((destination / 'gizmos').glob('*.gizmo'))), 2)
         self.assertIn('[file dirname [value root.name]]/media/', (destination / 'gizmos/Inner.gizmo').read_text())
         self.assertEqual(next((destination / 'media').rglob('*.exr')).read_bytes(), b'pixels')
+        self.assertEqual((destination / 'media/Inner_texture/texture.exr').read_bytes(), b'pixels')
         report = json.loads((destination / 'report.json').read_text(encoding='utf-8'))
         self.assertTrue(report['gizmo_dependencies_complete'])
         self.assertEqual(len(report['plugins']), 2)

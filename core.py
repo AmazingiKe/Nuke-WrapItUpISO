@@ -39,15 +39,25 @@ def words(text):
         value = raw[1:-1] if raw.startswith(('{','"')) else raw
         yield Token(value, start, i)
 
-def node_blocks(text):
+def node_blocks(text, *, scoped=False):
     # Nuke serializes nodes as Class { body }. Group children are subsequent nodes.
     tokens = list(words(text))
-    for a, b in zip(tokens, tokens[1:]):
+    groups = []
+    for index, a in enumerate(tokens):
         line_start = text.rfind('\n', 0, a.start)+1
         if text[line_start:a.start].strip(): continue
+        if a.value == 'end_group':
+            if groups: groups.pop()
+            continue
+        if index + 1 == len(tokens): continue
+        b = tokens[index + 1]
         if a.value in {'define_window_layout_xml','add_layer','set','push','version','end_group'}: continue
         if re.fullmatch(r'[A-Za-z_][\w:.-]*', a.value) and text[b.start:b.start+1] == '{':
-            yield a.value, b.start+1, b.value
+            block = (a.value, b.start+1, b.value)
+            yield (*block, tuple(filter(None, groups))) if scoped else block
+            if scoped and a.value in {'Group', 'Gizmo'}:
+                name = knobs(b.value, b.start+1).get('name', Token(a.value, 0, 0)).value
+                groups.append(name if a.value == 'Group' else '')
 
 def knobs(body, offset):
     result = {}
@@ -101,6 +111,7 @@ class Asset:
     missing: list = field(default_factory=list)
     owner: str = ''
     node_class: str = ''
+    node_path: str = ''
 
 @dataclass
 class Plan:
@@ -181,10 +192,10 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
     text, enc = read_script(path)
-    blocks = [(cls, knobs(body, pos)) for cls, pos, body in node_blocks(text)]
+    blocks = [(cls, knobs(body, pos), groups) for cls, pos, body, groups in node_blocks(text, scoped=True)]
     progress(0, len(blocks), '解析工程完成')
     base, warnings = path.parent, []
-    for cls, k in blocks:
+    for cls, k, groups in blocks:
         if cancel(): raise Cancelled()
         if cls == 'Root' and k.get('project_directory') and k['project_directory'].value:
             try: base = resolve(k['project_directory'].value, path.parent).resolve()
@@ -194,7 +205,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     if base_override is not ...:
         base = base_override
     assets = []
-    for index, (cls, k) in enumerate(blocks, 1):
+    for index, (cls, k, groups) in enumerate(blocks, 1):
         if cancel(): raise Cancelled()
         name = k.get('name', Token(cls,0,0)).value
         for key, t in k.items():
@@ -202,7 +213,8 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
             if cls in {'Write','DeepWrite'}: continue
             if key == 'file' and cls in {'Camera2','Camera3','Axis2','Axis3','ReadGeo','ReadGeo2','ReadGeo3'}:
                 if k.get('read_from_file', Token('false',0,0)).value not in {'true','1'}: continue
-            a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls); assets.append(a)
+            a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls,
+                      node_path='_'.join((*groups, name))); assets.append(a)
             try:
                 source = resolve(t.value, base).resolve(); a.source = str(source)
                 if snapshot:
@@ -240,6 +252,46 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_p
     scan_dependencies(plan, cancel, progress, context=context, media_index=media_index)
     return plan
 
+def media_folders(assets, cancel=lambda: False):
+    """Name by node, sharing a folder whenever references overlap on actual files."""
+    parents = list(range(len(assets)))
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    owners = {}
+    for index, asset in enumerate(assets):
+        if cancel(): raise Cancelled()
+        for path in asset.files:
+            if cancel(): raise Cancelled()
+            previous = owners.setdefault(path, index)
+            left, right = root(index), root(previous)
+            parents[max(left, right)] = min(left, right)
+
+    folders, used, result = {}, set(), []
+    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {f'{p}{n}' for p in ('COM', 'LPT') for n in range(1, 10)}
+    for index, asset in enumerate(assets):
+        if cancel(): raise Cancelled()
+        if not asset.files:
+            result.append('')
+            continue
+        representative = root(index)
+        if representative not in folders:
+            first = assets[representative]
+            name = re.sub(r'[^A-Za-z0-9_-]+', '_', first.node_path or first.node).strip('_')[:96] or 'Media'
+            if name.upper() in reserved: name = '_' + name
+            folder, number = name, 2
+            while folder.casefold() in used:
+                folder = f'{name}_{number}'
+                number += 1
+            used.add(folder.casefold())
+            folders[representative] = folder
+        result.append(folders[representative])
+    return result
+
+
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
     from gizmo import check_sources, finish_bundle
     from package_readme import render_package_readme
@@ -269,12 +321,12 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                 if cancel(): raise Cancelled()
                 total_bytes += source_file.stat().st_size
             byte_progress(0, total_bytes, '准备复制')
-        for a in plan.assets:
+        folders = media_folders(plan.assets, cancel)
+        for a, folder in zip(plan.assets, folders):
             if cancel(): raise Cancelled()
             row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files),'document':a.owner}
             rows.append(row)
             if not a.files: continue
-            folder = hashlib.sha256(os.path.normcase(str(Path(a.source).parent)).encode()).hexdigest()[:16]
             dest = stage/'media'/folder; dest.mkdir(parents=True,exist_ok=True)
             for p in a.files:
                 if p in copied: continue

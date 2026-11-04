@@ -263,6 +263,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
                 raise ValueError('扫描过程中插件内容变化')
             for asset in nested.assets:
                 asset.node = f'{plugin.name} / {asset.node}'
+                asset.node_path = f'{plugin.name}_{asset.node_path}'
             plan.assets.extend(nested.assets)
             if any(a.status != '就绪' for a in nested.assets):
                 plugin.status = '待核对'
