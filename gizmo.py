@@ -143,10 +143,24 @@ def code_dependencies(text):
                 continue
             declaration = list(words(b.value))
             if declaration and declaration[0].value == '22':
-                reasons.append('含 Python/Tcl 按钮，需核对脚本依赖')
-    if re.search(r'(?m)^\s*(?:python|source|load|load_plugin)\s', text):
-        reasons.append('含外部脚本加载命令')
+                button = declaration[1].value if len(declaration) > 1 else '未命名'
+                reasons.append(f'{location} / {button}：含 Python/Tcl 按钮，需核对脚本依赖')
     return list(dict.fromkeys(reasons))
+
+
+def script_load_commands(text):
+    """Top-level executable commands need collection support, unlike saved knobs."""
+    from core import words
+    reasons = []
+    for token in words(text):
+        start = text.rfind('\n', 0, token.start) + 1
+        if (not text[start:token.start].strip()
+                and text[token.start:token.end] == token.value
+                and token.value in {'python', 'source', 'load', 'load_plugin'}):
+            line = text.count('\n', 0, token.start) + 1
+            kind = '脚本执行命令' if token.value == 'python' else '外部脚本加载命令'
+            reasons.append(f'第 {line} 行含{kind} {token.value}，需核对外部依赖')
+    return reasons
 
 
 def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None):
@@ -160,7 +174,15 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     roots = [p for p in roots if p != Path.home() / '.nuke' or p.exists()]
     found, active, custom_knobs = {}, [], {}
     plan.documents[str(plan.script)] = (plan.text, plan.encoding, hashlib.sha256(plan.text.encode(plan.encoding)).hexdigest())
-    plan.plugin_errors.extend(code_dependencies(plan.text))
+    def inspect_code(text, owner):
+        reviews = [f'{owner} / {reason}' for reason in code_dependencies(text)]
+        plan.script_warnings.extend(reviews)
+        if plan.automatic_plugins:
+            plan.warnings.extend(f'脚本待核对（已原样保留，不阻止打包）：{reason}' for reason in reviews)
+        blockers = [f'{owner}：{reason}' for reason in script_load_commands(text)]
+        return blockers if plan.automatic_plugins else blockers + reviews
+
+    plan.plugin_errors.extend(inspect_code(plan.text, plan.script.name))
 
     def references(text):
         for cls, pos, body in node_blocks(text):
@@ -240,8 +262,8 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             plugin.sha256 = hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest()
             plan.documents[str(source)] = (nested.text, nested.encoding, plugin.sha256)
             custom_knobs[name] = file_knobs(nested.text)
-            plugin.status, plugin.note = '就绪', '已找到，静态依赖已扫描'
-            reasons = code_dependencies(nested.text)
+            plugin.status, plugin.note = '就绪', '已找到，显式素材与插件依赖已扫描'
+            reasons = inspect_code(nested.text, source.name)
             if reasons:
                 plugin.status, plugin.note = '待核对', '；'.join(reasons)
             active.append(name)
@@ -356,7 +378,10 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
         hashes[relative] = actual
         if verify_progress: verify_progress(done + 1, total, path.name)
     return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers
-            and not plan.plugin_search_errors and all(p.status == '就绪' for p in plan.plugins),
+            and not plan.plugin_search_errors and not plan.script_warnings
+            and all(p.status == '就绪' for p in plan.plugins),
+            'script_dependencies_verified': not plan.script_warnings,
+            'script_dependency_warnings': plan.script_warnings,
             'plugin_search_paths': plan.search_paths, 'file_hashes': hashes,
             'nuke_runtime_verified': False}
 

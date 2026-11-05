@@ -55,6 +55,8 @@ def render_package_readme(report):
         original = cell(report['original_path_script'])
         lines += ['', f'原路径版本：{original}。保留原工程内容和原始路径，供对照或在原环境中使用。',
                   '此版本依赖原素材和插件环境；相对路径仍以原工程目录或原 project_directory 为基准。']
+    if report.get('script_dependency_warnings'):
+        lines += ['', '按钮与回调脚本已原样保留，脚本依赖未经验证；核对清单见 `report.json`。']
     lines += ['', '移动时请搬走整个文件夹。', '',
               '状态表示文件收集结果；详细原因、完整路径和校验信息见 `report.json`。', '']
     return '\n'.join(lines)

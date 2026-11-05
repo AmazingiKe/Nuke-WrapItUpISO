@@ -68,7 +68,7 @@ class ReviewFixTests(unittest.TestCase):
                  'source external.tcl\nRoot {\n}\n']
         for text in texts:
             self.script.write_text(text)
-            plan = ScanSession().scan(self.script)
+            plan = scan(self.script)
             self.assertTrue(plan.plugin_blockers)
             with self.assertRaises(DependencyError): package(plan, self.root/'out')
         self.assertFalse(sentinel.exists())

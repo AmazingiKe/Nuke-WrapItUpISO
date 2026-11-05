@@ -125,6 +125,7 @@ class Plan:
     documents: dict = field(default_factory=dict)
     search_paths: list = field(default_factory=list)
     plugin_search_errors: list = field(default_factory=list)
+    script_warnings: list = field(default_factory=list)
     base: Path | None = None
     automatic_plugins: bool = False
     snapshot: object = None
