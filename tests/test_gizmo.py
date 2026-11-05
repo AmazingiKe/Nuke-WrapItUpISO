@@ -2,13 +2,12 @@ import hashlib
 from contextlib import contextmanager
 import json
 import os
-import runpy
 from pathlib import Path
 import tempfile
 import subprocess
 import sys
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from core import Cancelled, scan, package
 
@@ -54,8 +53,8 @@ class GizmoTests(unittest.TestCase):
         report = json.loads((destination / 'report.json').read_text(encoding='utf-8'))
         self.assertTrue(report['gizmo_dependencies_complete'])
         self.assertEqual(len(report['plugins']), 2)
-        self.assertTrue((destination / '打开工程.cmd').is_file())
-        self.assertTrue((destination / 'load_package.py').is_file())
+        self.assertFalse((destination / '打开工程.cmd').exists())
+        self.assertFalse((destination / 'load_package.py').exists())
         for relative, digest in report['file_hashes'].items():
             self.assertEqual(hashlib.sha256((destination / relative).read_bytes()).hexdigest(), digest)
         self.assertIn(str(inner), [p.source for p in plan.plugins])
@@ -119,10 +118,10 @@ class GizmoTests(unittest.TestCase):
     def test_binary_plugin_is_reported_without_claiming_gizmo_success(self):
         (self.plugins / 'Outer.dll').write_bytes(b'not a real DLL')
         plan = self.scan()
-        self.assertEqual(plan.plugins[0].status, '待核对')
+        self.assertEqual(plan.plugins[0].status, '外部依赖')
         self.assertIn('二进制', plan.plugins[0].note)
-        with self.assertRaises(RuntimeError):
-            package(plan, self.root / 'binary')
+        target = package(plan, self.root / 'binary')
+        self.assertFalse(list(target.rglob('*.dll')))
 
     def test_custom_file_controls_and_instance_overrides_are_collected(self):
         default = self.root / 'default.exr'
@@ -327,21 +326,15 @@ class GizmoTests(unittest.TestCase):
                 package(plan, self.root / 'cancelled')
         self.assertEqual(list((self.root / 'cancelled').iterdir()), [])
 
-    def test_loader_rejects_altered_delivery_before_opening_nuke_project(self):
+    def test_report_hashes_allow_detecting_altered_delivery_without_launcher(self):
         self.gizmo('Outer')
         target = package(self.scan(), self.root / 'delivery')
-        nuke = Mock()
-        loader = target / 'load_package.py'
-        with patch.dict(sys.modules, {'nuke': nuke}):
-            runpy.run_path(str(loader))
-        nuke.scriptOpen.assert_called_once_with(str(target / self.script.name))
-        nuke.reset_mock()
+        report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+        expected = report['file_hashes']['gizmos/Outer.gizmo']
+        self.assertEqual(hashlib.sha256((target / 'gizmos/Outer.gizmo').read_bytes()).hexdigest(), expected)
         (target / 'gizmos/Outer.gizmo').write_text('altered')
-        with patch.dict(sys.modules, {'nuke': nuke}):
-            with self.assertRaisesRegex(RuntimeError, 'checksum failed'):
-                runpy.run_path(str(loader))
-        nuke.pluginAddPath.assert_not_called()
-        nuke.scriptOpen.assert_not_called()
+        self.assertNotEqual(hashlib.sha256((target / 'gizmos/Outer.gizmo').read_bytes()).hexdigest(), expected)
+        self.assertFalse((target / 'load_package.py').exists())
 
 
 if __name__ == '__main__':

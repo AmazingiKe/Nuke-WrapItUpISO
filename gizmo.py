@@ -16,6 +16,7 @@ class Plugin:
     used_by: list = field(default_factory=list)
     dependencies: list = field(default_factory=list)
     sha256: str = ''
+    packed_name: str = ''
 
 
 def digest_file(path, cancel=lambda: False, progress=None):
@@ -70,25 +71,11 @@ def index_plugins(paths, cancel, progress, *, observe=None):
 
 def file_knobs(text):
     """File controls and link controls forwarding a known file knob."""
-    from core import node_blocks, words, PATH_KNOBS
-    result = set()
+    from core import node_blocks, declared_file_knobs
     for cls, pos, body in node_blocks(text):
         # Only the outer definition declares knobs visible on Gizmo instances.
-        tokens = list(words(body))
-        for a, b in zip(tokens, tokens[1:]):
-            if a.value != 'addUserKnob':
-                continue
-            declaration = [t.value for t in words(b.value)]
-            if len(declaration) < 2:
-                continue
-            if declaration[0] == '2':
-                result.add(declaration[1])
-            elif declaration[0] == '41' and 'T' in declaration:
-                index = declaration.index('T') + 1
-                if index < len(declaration) and declaration[index].split('.')[-1] in PATH_KNOBS:
-                    result.add(declaration[1])
-        break
-    return result
+        return declared_file_knobs(body)
+    return set()
 
 
 def validate_definition(text):
@@ -136,6 +123,14 @@ def code_dependencies(text):
                 token = values[key]
                 if not is_ui_callback(text[token.start:token.end]):
                     reasons.append(f'{location}：含 {key} 回调，需核对脚本依赖')
+        for key, token in values.items():
+            if key in callbacks or key == 'addUserKnob':
+                continue
+            commands = re.findall(r'\[\s*([^\s\[\]{}"]+)', token.value)
+            if any(command not in {'value', 'file', 'frame', 'expr', 'exists', 'metadata',
+                                   'lrange', 'lindex', 'llength', 'split', 'join', 'list', 'string', 'format'}
+                   for command in commands):
+                reasons.append(f'{location} / {key}：含脚本表达式，需核对运行时依赖')
         # addUserKnob may repeat, so do not use the knob dictionary for declarations.
         tokens = list(words(body))
         for a, b in zip(tokens, tokens[1:]):
@@ -148,23 +143,8 @@ def code_dependencies(text):
     return list(dict.fromkeys(reasons))
 
 
-def script_load_commands(text):
-    """Top-level executable commands need collection support, unlike saved knobs."""
-    from core import words
-    reasons = []
-    for token in words(text):
-        start = text.rfind('\n', 0, token.start) + 1
-        if (not text[start:token.start].strip()
-                and text[token.start:token.end] == token.value
-                and token.value in {'python', 'source', 'load', 'load_plugin'}):
-            line = text.count('\n', 0, token.start) + 1
-            kind = '脚本执行命令' if token.value == 'python' else '外部脚本加载命令'
-            reasons.append(f'第 {line} 行含{kind} {token.value}，需核对外部依赖')
-    return reasons
-
-
 def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None):
-    from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs
+    from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs, is_gizmo_reference
     from plugin_paths import discover_paths
     plan.warnings.append('已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。')
     roots = default_paths()
@@ -175,11 +155,13 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     found, active, custom_knobs = {}, [], {}
     plan.documents[str(plan.script)] = (plan.text, plan.encoding, hashlib.sha256(plan.text.encode(plan.encoding)).hexdigest())
     def inspect_code(text, owner):
-        reviews = [f'{owner} / {reason}' for reason in code_dependencies(text)]
+        from script_scan import inspect_commands
+        commands, uncertain = inspect_commands(text)
+        reviews = [f'{owner} / {reason}' for reason in code_dependencies(text) + uncertain]
         plan.script_warnings.extend(reviews)
         if plan.automatic_plugins:
             plan.warnings.extend(f'脚本待核对（已原样保留，不阻止打包）：{reason}' for reason in reviews)
-        blockers = [f'{owner}：{reason}' for reason in script_load_commands(text)]
+        blockers = [f'{owner}：{reason}' for reason in commands]
         return blockers if plan.automatic_plugins else blockers + reviews
 
     plan.plugin_errors.extend(inspect_code(plan.text, plan.script.name))
@@ -222,25 +204,51 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             plugin.status = '外部依赖'
             plugin.note = 'OFX 插件不参与打包；接收方需自行安装兼容版本并配置授权。'
             return
-        if any(p.name != name and p.name.casefold() == name.casefold() for p in plan.plugins):
+        explicit = is_gizmo_reference(name)
+        if not explicit and any(p.name != name and p.name.casefold() == name.casefold() for p in plan.plugins):
             plugin.status, plugin.note = '同名冲突', '节点名称仅大小写不同，无法安全写入同一插件目录'
             return
-        if not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
+        if not explicit and not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
             plugin.status, plugin.note = '待核对', '节点名称无法安全映射为 Gizmo 文件名'
             return
-        candidates = index.get(name.casefold(), [])
+        if explicit:
+            if any(char in name for char in '[]$\n\r;') or not Path(name).is_absolute():
+                plugin.note = 'Gizmo 引用不是可确定的绝对路径，保留原引用，需核对接收方路径。'
+                return
+            source = Path(name).resolve()
+            plugin.source = str(source)
+            if plan.snapshot:
+                plan.snapshot.watch(source, content=True)
+                plan.snapshot.watch(source.parent)
+            try:
+                candidates = [source] if source.is_file() else []
+            except OSError as error:
+                plugin.status, plugin.note = '待核对', f'显式 Gizmo 路径无法访问：{error}'
+                return
+        else:
+            candidates = index.get(name.casefold(), [])
         if plan.snapshot:
             for candidate in candidates:
                 plan.snapshot.watch(candidate, content=candidate.suffix.lower() == '.gizmo')
         plugin.candidates = [str(p) for p in candidates]
         if not candidates:
+            if explicit:
+                plugin.note = '工程指定的 Gizmo 文件未找到，保留原引用；不会以搜索目录中的同名文件替代。'
+                return
             plugin.note = ('未找到对应文件，跳过收集并继续打包；也可能是未收录的内置节点。'
                            if plan.automatic_plugins else
                            '未找到对应文件；也可能是未收录的内置节点。')
             return
-        if any(p.suffix.lower() != '.gizmo' for p in candidates):
-            plugin.status, plugin.note = '待核对', '发现二进制插件，无法证明版本、授权及关联库完整；不自动打包'
+        binary = next((p for p in candidates if p.parent == candidates[0].parent and p.suffix.lower() != '.gizmo'), None)
+        if binary is not None:
+            plugin.status, plugin.source = '外部依赖', str(binary)
+            plugin.note = '二进制插件不参与打包；接收方需自行安装兼容版本、关联库并配置授权。'
+            if any(p.suffix.lower() == '.gizmo' for p in candidates):
+                plugin.note += '最高优先级目录存在二进制候选及同名 Gizmo，保留外部依赖引用，请核对接收方版本。'
             return
+        if any(p.suffix.lower() != '.gizmo' for p in candidates):
+            plan.warnings.append(f'{name}：存在较低优先级的同名二进制插件，按搜索顺序收集 {candidates[0]}，请核对接收方版本。')
+            candidates = [p for p in candidates if p.suffix.lower() == '.gizmo']
         try:
             hashes = {digest_file(p, cancel) for p in candidates}
         except OSError as error:
@@ -252,6 +260,8 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
                 return
             plan.warnings.append(f'{name}：同名版本不同，按搜索顺序自动选择 {candidates[0]}')
         source = candidates[0]
+        # One physical document may be referenced by both a class and a path.
+        source = next((Path(owner) for owner in plan.documents if Path(owner) == source), source)
         plugin.source = str(source)
         if len(active) >= 100:
             plugin.status, plugin.note = '待核对', 'Gizmo 嵌套超过 100 层，请检查依赖'
@@ -277,17 +287,33 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
 
     for name, node in root_references:
         visit(name, f'{plan.script.name} / {node}')
+    occupied = {p.name.casefold() for p in plan.plugins if not is_gizmo_reference(p.name)}
+    for plugin in plan.plugins:
+        if not is_gizmo_reference(plugin.name) or plugin.source not in plan.documents:
+            continue
+        stem = re.sub(r'[^A-Za-z0-9_]', '_', Path(plugin.source).stem)[:48] or 'Gizmo'
+        suffix = hashlib.sha256(os.path.normcase(plugin.source).encode('utf-8')).hexdigest()[:12]
+        base = f'NBP_{stem}_{suffix}'
+        alias, counter = base, 2
+        while alias.casefold() in occupied:
+            alias = f'{base}_{counter}'
+            counter += 1
+        occupied.add(alias.casefold())
+        plugin.packed_name = alias
     # Rescan with the file controls declared by the collected Gizmo definitions.
     # This includes overrides saved on each instance, not only template defaults.
     rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot, media_index=media_index)
     if hashlib.sha256(rescanned.text.encode(rescanned.encoding)).hexdigest() != plan.documents[str(plan.script)][2]:
         plan.plugin_errors.append('扫描过程中工程发生变化，请重新扫描')
     plan.assets = rescanned.assets
+    scanned_sources = set()
     for plugin in plan.plugins:
         if plugin.source not in plan.documents:
             continue
+        if plugin.source in scanned_sources:
+            continue
+        scanned_sources.add(plugin.source)
         mapping = dict(custom_knobs)
-        mapping.update({'Gizmo': custom_knobs[plugin.name], 'Group': custom_knobs[plugin.name]})
         try:
             nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot, media_index=media_index)
             if hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest() != plugin.sha256:
@@ -324,6 +350,13 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     plan.warnings.extend(plan.plugin_errors)
 
 
+def reference_edits(text, plugins):
+    from core import node_blocks
+    aliases = {p.name: p.packed_name for p in plugins if p.status == '就绪' and p.packed_name}
+    return [(token.start, token.end, aliases[name])
+            for name, _, _, token in node_blocks(text, class_tokens=True) if name in aliases]
+
+
 def check_sources(plan, cancel):
     from core import DependencyError
     for path, (_, _, digest) in plan.documents.items():
@@ -341,7 +374,7 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
             if cancel():
                 raise Cancelled()
             if plugin.status != '就绪':
-                records.append({'name': plugin.name, 'source': plugin.source, 'packed_path': None,
+                records.append({'name': plugin.name, 'original_reference': plugin.name, 'source': plugin.source, 'packed_path': None,
                                 'status': '外部依赖' if plugin.status == '外部依赖' else '未收集',
                                 'note': plugin.note, 'dependencies': plugin.dependencies,
                                 'used_by': plugin.used_by, 'candidates': plugin.candidates})
@@ -349,13 +382,14 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
             text, encoding, _ = plan.documents[plugin.source]
             for start, end, value in sorted(edits.get(plugin.source, []), reverse=True):
                 text = text[:start] + value + text[end:]
-            path = folder / (plugin.name + '.gizmo')
+            path = folder / ((plugin.packed_name or plugin.name) + '.gizmo')
             path.write_bytes(text.encode(encoding))
-            records.append({'name': plugin.name, 'source': plugin.source, 'source_sha256': plugin.sha256,
+            records.append({'name': plugin.name, 'original_reference': plugin.name,
+                            'packed_class': plugin.packed_name or plugin.name,
+                            'source': plugin.source, 'source_sha256': plugin.sha256,
                             'packed_path': path.relative_to(stage).as_posix(), 'status': '已收集',
                             'dependencies': plugin.dependencies, 'used_by': plugin.used_by,
                             'candidates': plugin.candidates})
-        write_loader(plan, stage)
     check_sources(plan, cancel)
     # A single destination read both verifies the copy and supplies the report hash.
     paths = {stage / relative for relative in hashes}
@@ -380,75 +414,8 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
     return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers
             and not plan.plugin_search_errors and not plan.script_warnings
             and all(p.status == '就绪' for p in plan.plugins),
-            'script_dependencies_verified': not plan.script_warnings,
+            'script_dependencies_verified': False,
+            'script_dependency_validation': 'static_only_runtime_not_verified',
             'script_dependency_warnings': plan.script_warnings,
             'plugin_search_paths': plan.search_paths, 'file_hashes': hashes,
             'nuke_runtime_verified': False}
-
-
-def write_loader(plan, stage):
-    # Paths are Python literals, never interpolated into shell commands.
-    loader = '''from pathlib import Path
-import hashlib
-import json
-import nuke
-
-root = Path(__file__).resolve().parent
-report = json.loads((root / 'report.json').read_text(encoding='utf-8'))
-for relative, expected in report['file_hashes'].items():
-    path = (root / relative).resolve()
-    if root not in path.parents:
-        raise RuntimeError('Invalid package path: ' + relative)
-    digest = hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b''):
-            digest.update(chunk)
-    if digest.hexdigest() != expected:
-        raise RuntimeError('Package checksum failed: ' + relative)
-nuke.pluginAddPath(str(root / 'gizmos'))
-'''
-    loader += f'nuke.scriptOpen(str(root / {plan.script.name!r}))\n'
-    (stage / 'load_package.py').write_text(loader, encoding='utf-8')
-    version = re.search(r'(?m)^version\s+(\d+\.\d+)', plan.text)
-    desired = version.group(1) if version else ''
-    powershell = '''param([string]$NukeExe)
-$ErrorActionPreference = 'Stop'
-try {
-    if (-not $NukeExe) { $NukeExe = $env:NUKE_EXECUTABLE }
-    if (-not $NukeExe) {
-        $candidates = @(Get-ChildItem -LiteralPath $env:ProgramFiles -Directory -Filter 'Nuke*' |
-            ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter 'Nuke*.exe' } |
-            Where-Object { $_.BaseName -match '^Nuke[0-9]+[.][0-9]+$' })
-        $matching = @($candidates | Where-Object { $_.BaseName -eq 'NukeDESIRED_VERSION' })
-        if ($matching.Count -eq 1) { $NukeExe = $matching[0].FullName }
-        elseif ($candidates.Count -eq 1) { $NukeExe = $candidates[0].FullName }
-    }
-    if (-not $NukeExe) {
-        Add-Type -AssemblyName System.Windows.Forms
-        $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Select the Nuke executable for this project'
-        $dialog.Filter = 'Nuke executable|Nuke*.exe'
-        if ($dialog.ShowDialog() -ne 'OK') { exit 1 }
-        $NukeExe = $dialog.FileName
-    }
-    if (-not (Test-Path -LiteralPath $NukeExe -PathType Leaf)) { throw 'Nuke executable not found' }
-    $start = New-Object System.Diagnostics.ProcessStartInfo
-    $start.FileName = $NukeExe
-    # Some Nuke versions misdecode non-ASCII command-line filenames on Windows.
-    # Keep the argument ASCII; the working directory retains the Unicode path.
-    $start.Arguments = 'NUKE_ARGUMENTS'
-    $start.WorkingDirectory = $PSScriptRoot
-    $start.UseShellExecute = $false
-    $process = [System.Diagnostics.Process]::Start($start)
-    $process.WaitForExit()
-    exit $process.ExitCode
-} catch {
-    Write-Host $_ -ForegroundColor Red
-    Read-Host 'Press Enter to close'
-    exit 1
-}
-'''.replace('DESIRED_VERSION', desired).replace(
-        'NUKE_ARGUMENTS', 'load_package.py' if any(p.status == '外部依赖' for p in plan.plugins)
-        else '--safe load_package.py')
-    (stage / 'launch.ps1').write_text(powershell, encoding='utf-8-sig')
-    (stage / '打开工程.cmd').write_bytes(b'@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1" %*\r\n')

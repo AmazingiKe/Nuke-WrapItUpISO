@@ -7,7 +7,7 @@ def is_ui_callback(raw):
     """Accept only local node/knob queries, conditions and UI enable/visibility calls.
 
     This is deliberately not a general Python dependency resolver. Unknown syntax,
-    imports, file/value mutations and dynamic calls retain the existing blocker.
+    imports, file/value mutations and dynamic calls require dependency review.
     ``raw`` includes the original Tcl word delimiters so braced Python strings
     retain their escapes while quoted Nuke serialization is decoded once.
     """

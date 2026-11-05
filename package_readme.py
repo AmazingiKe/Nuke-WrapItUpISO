@@ -43,14 +43,15 @@ def render_package_readme(report):
         for plugin in plugins:
             lines.append(f'| {cell(plugin.get("name", ""))} | {plugin_result(plugin)} |')
         if any(p.get('status') == '外部依赖' for p in plugins):
-            lines += ['', '外部插件不随包提供，接收方需安装兼容版本并配置授权；打开入口会加载本机插件环境。']
+            lines += ['', '外部插件不随包提供，接收方需安装兼容版本并配置授权。']
     else:
         lines.append('无插件收集项。')
     lines += ['', '## 打开工程', '']
-    if plugins:
-        lines.append('双击 `打开工程.cmd`，或使用 Nuke 执行 `load_package.py`。')
-    else:
-        lines.append(f'使用 Nuke 打开 {script}。')
+    if any(p.get('status') == '已收集' for p in plugins):
+        lines += ['打开工程前，在 Nuke 的 Script Editor（Python）中将本包 `gizmos` 文件夹加入搜索路径：', '',
+                  '```python', 'import nuke', 'nuke.pluginAddPath(r"D:/交付包实际路径/gizmos")', '```', '',
+                  '将示例路径替换为当前交付包的位置。移动交付包后需重新指定；也可由接收方统一配置插件搜索路径。', '']
+    lines.append(f'使用已配置好插件环境的 Nuke 打开 {script}。')
     if report.get('original_path_script'):
         original = cell(report['original_path_script'])
         lines += ['', f'原路径版本：{original}。保留原工程内容和原始路径，供对照或在原环境中使用。',

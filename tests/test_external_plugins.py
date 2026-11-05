@@ -38,7 +38,7 @@ class ExternalPluginTests(unittest.TestCase):
                     readme = (target / 'README.md').read_text(encoding='utf-8')
                     self.assertIn('未成功 0 项', readme)
                     self.assertIn('接收方安装', readme)
-                    self.assertNotIn('--safe', (target / 'launch.ps1').read_text(encoding='utf-8-sig'))
+                    self.assertFalse((target / 'launch.ps1').exists())
                     if suffix != 'absent': candidate.unlink()
 
     def test_ofx_child_does_not_block_parent_gizmo(self):
@@ -49,10 +49,11 @@ class ExternalPluginTests(unittest.TestCase):
         target = package(plan, self.root / 'nested')
         self.assertTrue((target / 'gizmos/Outer.gizmo').is_file())
         self.assertFalse((target / ('gizmos/' + self.name + '.gizmo')).exists())
-        self.assertNotIn('--safe', (target / 'launch.ps1').read_text(encoding='utf-8-sig'))
+        self.assertFalse((target / 'launch.ps1').exists())
 
-    def test_regular_gizmo_keeps_safe_launcher(self):
+    def test_regular_gizmo_has_manual_instructions_without_launcher(self):
         self.script.write_text('Outer {\n}\n')
         (self.root / 'Outer.gizmo').write_text('Gizmo {\n}\nend_group\n')
         target = package(scan(self.script), self.root / 'regular')
-        self.assertIn('--safe load_package.py', (target / 'launch.ps1').read_text(encoding='utf-8-sig'))
+        self.assertFalse((target / 'launch.ps1').exists())
+        self.assertIn('pluginAddPath', (target / 'README.md').read_text(encoding='utf-8'))

@@ -39,7 +39,11 @@ def words(text):
         value = raw[1:-1] if raw.startswith(('{','"')) else raw
         yield Token(value, start, i)
 
-def node_blocks(text, *, scoped=False):
+def is_gizmo_reference(value):
+    return value.lower().endswith('.gizmo')
+
+
+def node_blocks(text, *, scoped=False, class_tokens=False):
     # Nuke serializes nodes as Class { body }. Group children are subsequent nodes.
     tokens = list(words(text))
     groups = []
@@ -51,9 +55,12 @@ def node_blocks(text, *, scoped=False):
             continue
         if index + 1 == len(tokens): continue
         b = tokens[index + 1]
-        if a.value in {'define_window_layout_xml','add_layer','set','push','version','end_group'}: continue
-        if re.fullmatch(r'[A-Za-z_][\w:.-]*', a.value) and text[b.start:b.start+1] == '{':
+        if a.value in {'define_window_layout_xml','add_layer','set','push','version','end_group',
+                      'if','foreach','for','while','proc','catch','eval','uplevel','namespace',
+                      'source','load','load_plugin','python'}: continue
+        if (re.fullmatch(r'[A-Za-z_][\w:.-]*', a.value) or is_gizmo_reference(a.value)) and text[b.start:b.start+1] == '{':
             block = (a.value, b.start+1, b.value)
+            if class_tokens: block += (a,)
             yield (*block, tuple(filter(None, groups))) if scoped else block
             if scoped and a.value in {'Group', 'Gizmo'}:
                 name = knobs(b.value, b.start+1).get('name', Token(a.value, 0, 0)).value
@@ -95,7 +102,26 @@ Gizmo BlinkScript ChannelMerge ClipTest ColorMatrix Difference Log2Lin Matrix
 MergeExpression Noise Position Ramp SoftClip StickyNote CheckerBoard CheckerBoard2
 ColorWheel Text Text2 ColorBars CurveTool Histogram ContactSheet Switch
 Vectorfield VectorDistort VectorGenerator HueShift HSVTool GodRays Glow Flare
-Convolve Median Bilateral Merge EdgeDetect Posterize'''.split())
+Convolve Median Bilateral Merge EdgeDetect Posterize EXPTool Mirror Mirror2'''.split())
+
+
+def declared_file_knobs(body):
+    """File declarations belong to a single node, not every node of its class."""
+    result = set()
+    tokens = list(words(body))
+    for key, value in zip(tokens, tokens[1:]):
+        if key.value != 'addUserKnob':
+            continue
+        declaration = [token.value for token in words(value.value)]
+        if len(declaration) < 2:
+            continue
+        if declaration[0] == '2':
+            result.add(declaration[1])
+        elif declaration[0] == '41' and 'T' in declaration:
+            index = declaration.index('T') + 1
+            if index < len(declaration) and declaration[index].split('.')[-1] in PATH_KNOBS:
+                result.add(declaration[1])
+    return result
 
 @dataclass
 class Asset:
@@ -193,10 +219,11 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
     text, enc = read_script(path)
-    blocks = [(cls, knobs(body, pos), groups) for cls, pos, body, groups in node_blocks(text, scoped=True)]
+    blocks = [(cls, knobs(body, pos), groups, declared_file_knobs(body))
+              for cls, pos, body, groups in node_blocks(text, scoped=True)]
     progress(0, len(blocks), '解析工程完成')
     base, warnings = path.parent, []
-    for cls, k, groups in blocks:
+    for cls, k, groups, declared in blocks:
         if cancel(): raise Cancelled()
         if cls == 'Root' and k.get('project_directory') and k['project_directory'].value:
             try: base = resolve(k['project_directory'].value, path.parent).resolve()
@@ -206,11 +233,11 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     if base_override is not ...:
         base = base_override
     assets = []
-    for index, (cls, k, groups) in enumerate(blocks, 1):
+    for index, (cls, k, groups, declared) in enumerate(blocks, 1):
         if cancel(): raise Cancelled()
         name = k.get('name', Token(cls,0,0)).value
         for key, t in k.items():
-            if key not in PATH_KNOBS | (extra_path_knobs or {}).get(cls, set()) or not t.value: continue
+            if key not in PATH_KNOBS | declared | (extra_path_knobs or {}).get(cls, set()) or not t.value: continue
             if cls in {'Write','DeepWrite'}: continue
             if key == 'file' and cls in {'Camera2','Camera3','Axis2','Axis3','ReadGeo','ReadGeo2','ReadGeo3'}:
                 if k.get('read_from_file', Token('false',0,0)).value not in {'true','1'}: continue
@@ -294,7 +321,7 @@ def media_folders(assets, cancel=lambda: False):
 
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
-    from gizmo import check_sources, finish_bundle
+    from gizmo import check_sources, finish_bundle, reference_edits
     from package_readme import render_package_readme
     if plan.plugin_blockers:
         raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
@@ -308,7 +335,8 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     # Windows may deny renaming a large directory even after all copies succeeded.
     # Reserve the final name immediately; the marker guards unfinished packages.
     stage = target
-    edits, copied, rows, hashes = {}, set(), [], {}
+    edits = {owner: reference_edits(text, plan.plugins) for owner, (text, _, _) in plan.documents.items()}
+    copied, rows, hashes = set(), [], {}
     total = 0; done = 0
     try:
         marker = stage/'PACKAGING_INCOMPLETE.txt'

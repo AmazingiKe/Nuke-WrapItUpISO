@@ -34,6 +34,31 @@ def verify(nuke):
         config('R1', [('Add','A'),('Add','B'),('Append','C'),('Append','D')])
         config('R2', [('Add','E'),('Add','F'),('Append','G'),('Append','H')])
         config('A', [('Add','X')]); config('B', [('Add','Y')])
+        modern = sources / 'PathStartup'
+        for name in ('Direct', 'Shelves/A', 'Shelves/B', 'Shelves/.ignored',
+                     'Recursive/A/C', 'Recursive/B', 'Walk/A/C', 'Walk/B'):
+            (modern / name).mkdir(parents=True, exist_ok=True)
+        (modern / 'init.py').write_text('''import os, nuke
+from pathlib import Path
+base = Path(__file__).resolve().parent
+for folder in [base / 'Direct']:
+    if folder.is_dir(): nuke.pluginAddPath(folder.as_posix())
+shelves = base / 'Shelves'
+if shelves.exists() and shelves.is_dir():
+    for folder in sorted(shelves.iterdir(), key=lambda p: p.name.lower()):
+        if not folder.is_dir() or folder.name.startswith('.'):
+            continue
+        nuke.pluginAppendPath(folder.resolve(strict=False).as_posix())
+def register(root):
+    for folder in root.rglob('*'):
+        if folder.is_dir(): nuke.pluginAddPath(folder.as_posix())
+def main():
+    register(base / 'Recursive')
+if __name__ == '__main__': main()
+dirname, filename = os.path.split(os.path.abspath(__file__))
+for root, dirs, files in os.walk(os.path.join(dirname, 'Walk')):
+    nuke.pluginAppendPath(root)
+''', encoding='utf-8')
         backup = paths['R1']/'backup'; backup.mkdir()
         def gizmo(folder, name, color):
             (folder/(name+'.gizmo')).write_text(f'Gizmo {{\n inputs 0\n name {name}\n}}\nConstant {{\n inputs 0\n color {{{color}}}\n}}\nOutput {{\n}}\nend_group\n')
@@ -55,7 +80,7 @@ def verify(nuke):
             for frame in frame_numbers: (frames/('plate.'+(fmt % frame)+'.png')).write_bytes(png)
         for bad in ('plate.00001.png','plate.-0001.png'): (frames/bad).write_bytes(png)
         env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
-                   NUKE_PATH=os.pathsep.join(str(paths[p]) for p in ('R1','R2')))
+                   NUKE_PATH=os.pathsep.join([str(paths[p]) for p in ('R1','R2')] + [str(modern)]))
         env.pop('PYTHONPATH',None); env.pop('PYTHONHOME',None)
         reference = root/'reference.json'
         probe = root/'probe.py'
@@ -103,9 +128,10 @@ Path({str(reference)!r}).write_text(json.dumps(result))
         assert sources.resolve().parent == root
         shutil.rmtree(sources)
         delivered=root/'delivered.json'
-        probe.write_text(f'''import runpy,nuke,json
+        probe.write_text(f'''import nuke,json
 from pathlib import Path
-runpy.run_path({str(moved/'load_package.py')!r})
+nuke.pluginAddPath({str(moved/'gizmos')!r})
+nuke.scriptOpen({str(moved/script.name)!r})
 result={{}}
 for cls,name in (('ReviewChoice','Choice1'),('ReviewArchive','Archive1')):
     node=nuke.toNode(name)

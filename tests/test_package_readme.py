@@ -11,7 +11,7 @@ class PackageReadmeTests(unittest.TestCase):
                      {'name':'Missing','status':'未收集','packed_path':None,'note':'SECRET_REASON'}]}
         text=render_package_readme(report)
         for expected in ('Read1 | ok.exr | 成功','Read2 | seq.%04d.exr | 部分成功','Read3 | missing.exr | 未成功',
-                         'Demo | 成功','Missing | 未成功','打开工程.cmd','report.json'):
+                         'Demo | 成功','Missing | 未成功','pluginAddPath','report.json'):
             self.assertIn(expected,text)
         self.assertNotIn('SECRET_REASON',text)
         self.assertNotIn('缺帧',text)
