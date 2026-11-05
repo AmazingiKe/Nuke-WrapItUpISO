@@ -47,7 +47,7 @@ def index_plugins(paths, cancel, progress, *, observe=None):
         root = Path(root).expanduser().resolve()
         if observe: observe(root)
         if not root.is_dir():
-            errors.append(f'插件目录无法访问：{root}')
+            # Ignore stale search paths; missing referenced plugins are reported below.
             continue
         if root in visited: continue
         visited.add(root)
@@ -122,15 +122,20 @@ def validate_definition(text):
 def code_dependencies(text):
     """Flag executable callbacks that static collection cannot prove portable."""
     from core import node_blocks, knobs, words
+    from callback_scan import is_ui_callback
     reasons = []
     callbacks = {'onCreate', 'onScriptLoad', 'knobChanged', 'updateUI', 'autolabel',
                  'beforeRender', 'afterRender', 'beforeFrameRender', 'afterFrameRender',
                  'onDestroy', 'onScriptSave', 'onScriptClose'}
-    for cls, pos, body in node_blocks(text):
+    for cls, pos, body, parents in node_blocks(text, scoped=True):
         values = knobs(body, pos)
-        for key in callbacks:
+        name = values['name'].value if 'name' in values else cls
+        location = ' / '.join((*parents, name))
+        for key in sorted(callbacks):
             if key in values and values[key].value.strip():
-                reasons.append(f'含 {key} 回调，需核对脚本依赖')
+                token = values[key]
+                if not is_ui_callback(text[token.start:token.end]):
+                    reasons.append(f'{location}：含 {key} 回调，需核对脚本依赖')
         # addUserKnob may repeat, so do not use the knob dictionary for declarations.
         tokens = list(words(body))
         for a, b in zip(tokens, tokens[1:]):
@@ -191,6 +196,10 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         plugin = Plugin(name, used_by=[owner])
         found[name] = plugin
         plan.plugins.append(plugin)
+        if re.fullmatch(r'OFX[A-Za-z_]\w*(?:\.[\w-]+)+', name):
+            plugin.status = '外部依赖'
+            plugin.note = 'OFX 插件不参与打包；接收方需自行安装兼容版本并配置授权。'
+            return
         if any(p.name != name and p.name.casefold() == name.casefold() for p in plan.plugins):
             plugin.status, plugin.note = '同名冲突', '节点名称仅大小写不同，无法安全写入同一插件目录'
             return
@@ -277,14 +286,16 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     while changed:
         changed = False
         for plugin in plan.plugins:
-            children = [name for name in plugin.dependencies if found[name].status != '就绪'
+            children = [name for name in plugin.dependencies if found[name].status not in {'就绪', '外部依赖'}
                         and not (plan.automatic_plugins and found[name].status == '未找到')]
             if plugin.status == '就绪' and children:
                 plugin.status = '待核对'
                 plugin.note = '内部插件依赖未解决：' + '、'.join(children)
                 changed = True
-    if plan.plugins:
+    if any(plugin.status != '外部依赖' for plugin in plan.plugins):
         (plan.warnings if plan.automatic_plugins else plan.plugin_errors).extend(index_errors)
+    else:
+        plan.warnings.extend(index_errors)
     for plugin in plan.plugins:
         if plugin.status != '就绪':
             plan.warnings.append(f'{plugin.name} × {len(plugin.used_by)}：{plugin.status}；{plugin.note}')
@@ -309,7 +320,8 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
                 raise Cancelled()
             if plugin.status != '就绪':
                 records.append({'name': plugin.name, 'source': plugin.source, 'packed_path': None,
-                                'status': '未收集', 'note': plugin.note, 'dependencies': plugin.dependencies,
+                                'status': '外部依赖' if plugin.status == '外部依赖' else '未收集',
+                                'note': plugin.note, 'dependencies': plugin.dependencies,
                                 'used_by': plugin.used_by, 'candidates': plugin.candidates})
                 continue
             text, encoding, _ = plan.documents[plugin.source]
@@ -399,7 +411,7 @@ try {
     $start.FileName = $NukeExe
     # Some Nuke versions misdecode non-ASCII command-line filenames on Windows.
     # Keep the argument ASCII; the working directory retains the Unicode path.
-    $start.Arguments = '--safe load_package.py'
+    $start.Arguments = 'NUKE_ARGUMENTS'
     $start.WorkingDirectory = $PSScriptRoot
     $start.UseShellExecute = $false
     $process = [System.Diagnostics.Process]::Start($start)
@@ -410,6 +422,8 @@ try {
     Read-Host 'Press Enter to close'
     exit 1
 }
-'''.replace('DESIRED_VERSION', desired)
+'''.replace('DESIRED_VERSION', desired).replace(
+        'NUKE_ARGUMENTS', 'load_package.py' if any(p.status == '外部依赖' for p in plan.plugins)
+        else '--safe load_package.py')
     (stage / 'launch.ps1').write_text(powershell, encoding='utf-8-sig')
     (stage / '打开工程.cmd').write_bytes(b'@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1" %*\r\n')

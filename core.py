@@ -164,7 +164,7 @@ class Plan:
     @property
     def plugin_blockers(self):
         return self.plugin_errors + [f'{p.name}：{p.status}；{p.note}' for p in self.plugins
-                                    if p.status != '就绪' and not (self.automatic_plugins and p.status == '未找到')]
+                                    if p.status not in {'就绪', '外部依赖'} and not (self.automatic_plugins and p.status == '未找到')]
 
 def read_script(path):
     data = path.read_bytes()

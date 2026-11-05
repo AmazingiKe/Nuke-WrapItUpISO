@@ -92,6 +92,28 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(self.window.cancel.instate(['disabled']))
         self.assertTrue(all(control.instate(['!disabled']) for control in self.window.controls))
 
+    def test_ofx_external_dependency_is_not_shown_as_packaging_failure(self):
+        self.source.write_text('OFXcom.revisionfx.rsmb_v3 {\n name RSMB1\n}\n')
+        self.window.add([self.source])
+        self.wait_finished()
+        self.window.scan_only()
+        self.wait_finished()
+        row = self.window.table.get_children()[0]
+        self.assertEqual(self.window.table.set(row, 'status'), '—')
+        self.window.table.selection_set(row)
+        self.window.show_item_status()
+        details = self.window.dependencies.get('1.0', 'end')
+        self.assertIn('外部依赖', details)
+        self.assertNotIn('工程不能打包', details)
+        self.window.only_issues.set(True)
+        self.window.render_selected_project()
+        self.assertFalse(self.window.table.get_children())
+        self.window.output.set(str(self.folder / 'delivery'))
+        self.window.pack()
+        self.wait_finished()
+        self.assertIn('打包完成', self.log())
+        self.assertNotIn('跳过缺失插件', self.log())
+
     def test_validation_and_dialogs(self):
         with patch('app.messagebox.showinfo') as info:
             self.window.pack()

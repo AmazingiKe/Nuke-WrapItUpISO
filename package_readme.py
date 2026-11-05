@@ -18,6 +18,8 @@ def asset_result(asset):
 
 
 def plugin_result(plugin):
+    if plugin.get('status') == '外部依赖':
+        return '不打包（接收方安装）'
     return '成功' if plugin.get('status') == '已收集' and plugin.get('packed_path') else '未成功'
 
 
@@ -40,6 +42,8 @@ def render_package_readme(report):
         lines += ['| 插件 | 打包状态 |', '| --- | --- |']
         for plugin in plugins:
             lines.append(f'| {cell(plugin.get("name", ""))} | {plugin_result(plugin)} |')
+        if any(p.get('status') == '外部依赖' for p in plugins):
+            lines += ['', '外部插件不随包提供，接收方需安装兼容版本并配置授权；打开入口会加载本机插件环境。']
     else:
         lines.append('无插件收集项。')
     lines += ['', '## 打开工程', '']

@@ -177,11 +177,14 @@ class GizmoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(len(list((self.root / 'cli').rglob('Outer.gizmo'))), 1)
 
-    def test_unreadable_search_path_is_reported(self):
+    def test_missing_search_path_is_silently_skipped(self):
         self.gizmo('Outer')
         self.default_paths.return_value = [self.plugins, self.root / 'missing']
         plan = self.scan()
-        self.assertTrue(plan.plugin_errors)
+        self.assertFalse(plan.plugin_errors)
+        self.assertFalse(plan.plugin_search_errors)
+        self.assertNotIn('插件目录无法访问', ' '.join(plan.warnings))
+        self.assertEqual(plan.plugins[0].status, '就绪')
 
     def test_case_collisions_and_ofx_classes_are_not_silently_dropped(self):
         self.gizmo('Outer')

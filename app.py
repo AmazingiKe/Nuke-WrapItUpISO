@@ -43,8 +43,13 @@ def needs_review(plan):
 def brief_asset_summary(plan):
     parts = [f'{len(plan.assets)} 项素材']
     if plan.plugins:
-        ready = sum(p.status == '就绪' for p in plan.plugins)
-        parts.append(f'Gizmo {ready}/{len(plan.plugins)} 项就绪')
+        collected = [p for p in plan.plugins if p.status != '外部依赖']
+        ready = sum(p.status == '就绪' for p in collected)
+        if collected:
+            parts.append(f'Gizmo {ready}/{len(collected)} 项就绪')
+        external = len(plan.plugins) - len(collected)
+        if external:
+            parts.append(f'外部插件 {external} 项（不打包）')
         missing = sum(p.status == '未找到' for p in plan.plugins)
         if plan.automatic_plugins and missing:
             parts.append(f'跳过缺失插件 {missing} 项')
@@ -754,10 +759,10 @@ class Window(TkinterDnD.Tk):
                     ))
                     self.asset_rows[row] = asset
                 for plugin in plan.plugins:
-                    if self.only_issues.get() and plugin.status == '就绪': continue
+                    if self.only_issues.get() and plugin.status in {'就绪', '外部依赖'}: continue
                     row = self.table.insert('', 'end', values=(
                         plugin.name, '插件', plugin.source or '；'.join(plugin.candidates),
-                        1 if plugin.source else 0, '√' if plugin.status == '就绪' else '×',
+                        1 if plugin.source else 0, '√' if plugin.status == '就绪' else ('—' if plugin.status == '外部依赖' else '×'),
                     ))
                     self.asset_rows[row] = plugin
         self.show_item_status()
@@ -782,7 +787,9 @@ class Window(TkinterDnD.Tk):
                 lines = [(f'插件状态：{asset.status} · {asset.name}', level),
                          (asset.note, level), (f'来源：{asset.source or "尚未确定"}', 'info')]
                 if asset.status != '就绪':
-                    if cached and cached[0].automatic_plugins and asset.status == '未找到':
+                    if asset.status == '外部依赖':
+                        lines.append(('此插件不参与收集，不阻止工程打包。', 'info'))
+                    elif cached and cached[0].automatic_plugins and asset.status == '未找到':
                         lines.append(('此插件将跳过收集，其余内容继续打包。', 'warning'))
                     elif asset.status in {'同名冲突', '未找到'}:
                         lines.append(('此依赖未解决，工程不能打包。', 'warning'))
