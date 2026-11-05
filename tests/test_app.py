@@ -114,6 +114,25 @@ class WindowTests(unittest.TestCase):
         self.assertIn('打包完成', self.log())
         self.assertNotIn('跳过缺失插件', self.log())
 
+    def test_script_review_warning_allows_window_packaging(self):
+        self.source.write_text('NoOp {\n name Controls\n addUserKnob {22 help T {import webbrowser}}\n}\n')
+        self.window.add([self.source])
+        self.wait_finished()
+        self.window.scan_only()
+        self.wait_finished()
+        self.window.show_item_status()
+        details = self.window.dependencies.get('1.0', 'end')
+        self.assertIn('脚本待核对：1 项 · 不阻止打包', details)
+        self.assertIn('Controls / help', details)
+        self.window.output.set(str(self.folder / 'delivery'))
+        self.window.pack()
+        self.wait_finished()
+        self.assertIn('打包完成', self.log())
+        report_path = next((self.folder / 'delivery').rglob('report.json'))
+        report = json.loads(report_path.read_text(encoding='utf-8'))
+        self.assertFalse(report['script_dependencies_verified'])
+        self.assertFalse(report['gizmo_dependencies_complete'])
+
     def test_validation_and_dialogs(self):
         with patch('app.messagebox.showinfo') as info:
             self.window.pack()

@@ -839,6 +839,9 @@ class Window(TkinterDnD.Tk):
                     lines.append((error, 'error'))
                 lines.append((f'插件与外部依赖：{len(plan.plugins)} 项 · 待处理 {len(plan.plugin_blockers)} 项',
                               'warning' if plan.plugin_blockers else 'info'))
+                if plan.script_warnings:
+                    label = '不阻止打包' if plan.automatic_plugins else '严格检查阻止打包'
+                    lines.append((f'脚本待核对：{len(plan.script_warnings)} 项 · {label}', 'warning'))
                 lines.append((f'已自动搜索 {len(plan.search_paths)} 个插件目录', 'info'))
                 lines.extend((warning, 'warning') for warning in plan.warnings)
                 lines.append((f'工程：{path}', 'info'))
