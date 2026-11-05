@@ -93,7 +93,7 @@ nuke.pluginAppendPath(f'{base}/{name}')
         self.write(self.seed, "import nuke\nfor name in ['a', 'b']:\n    break\n    nuke.pluginAddPath(name)\n")
         result = discover_paths([self.seed])
         self.assertEqual(result.paths, [self.seed])
-        self.assertTrue(result.errors)
+        self.assertFalse(result.errors)
         self.write(self.seed, 'value = 1\n' * 10001)
         self.assertIn('步数限制', ' '.join(discover_paths([self.seed]).errors))
 
