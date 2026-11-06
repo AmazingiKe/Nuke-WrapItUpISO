@@ -2,11 +2,11 @@ import argparse
 from pathlib import Path
 from core import package
 from scan_cache import ScanSession
-from app_version import VERSION
+from app_version import APP_LABEL, APP_NAME
 
 def main():
-    parser=argparse.ArgumentParser(description='Nuke 批量打包器，仅需 Python 标准库，无需 Nuke')
-    parser.add_argument('--version', action='version', version=f'Nuke Batch Packager {VERSION}')
+    parser=argparse.ArgumentParser(description=f'{APP_NAME}：Nuke 批量打包器，仅需 Python 标准库，无需 Nuke')
+    parser.add_argument('--version', action='version', version=APP_LABEL)
     parser.add_argument('scripts',nargs='+'); parser.add_argument('-o','--output'); parser.add_argument('--scan',action='store_true')
     args=parser.parse_args()
     if not args.scan and not args.output: parser.error('打包需要 --output，或使用 --scan')

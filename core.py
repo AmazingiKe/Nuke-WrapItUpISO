@@ -3,6 +3,7 @@ from __future__ import annotations
 import os, re, json, hashlib, shutil, stat
 from pathlib import Path
 from dataclasses import dataclass, field
+from app_version import APP_NAME, VERSION
 
 class Cancelled(Exception): pass
 
@@ -397,6 +398,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress)
         report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         report['original_path_script'] = original_name
+        report['generator'] = {'name': APP_NAME, 'version': VERSION}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')
         if cancel(): raise Cancelled()

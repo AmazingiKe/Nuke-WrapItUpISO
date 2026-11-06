@@ -1,6 +1,7 @@
 """Concise delivery summary derived from the completed package report."""
 from collections import Counter
 from html import escape
+from app_version import APP_LABEL
 
 
 def cell(value):
@@ -27,7 +28,7 @@ def render_package_readme(report):
     assets, plugins = report.get('assets', []), report.get('plugins', [])
     script = cell(filename(report['source_script']))
     counts = Counter([asset_result(a) for a in assets] + [plugin_result(p) for p in plugins])
-    lines = ['# 打包结果', '', f'工程：{script}', '',
+    lines = ['# 打包结果', '', f'生成工具：{APP_LABEL}', '', f'工程：{script}', '',
              f'成功 {counts["成功"]} 项 · 部分成功 {counts["部分成功"]} 项 · 未成功 {counts["未成功"]} 项', '',
              '## 素材', '']
     if assets:

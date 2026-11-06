@@ -126,7 +126,7 @@ Write {
         self.assertEqual(list((self.root/'packed').iterdir()),[])
     def test_braces_spaces_udim_and_environment(self):
         folder=self.root/'space folder'; folder.mkdir(); (folder/'tile.1001.exr').write_bytes(b'udim')
-        self.script.write_text('Read {\n file {space folder/tile.<UDIM>.exr}\n name tile\n}\nRead {\n file {$NUKE_PACKAGER_UNDEFINED/file.exr}\n name env\n}\n')
+        self.script.write_text('Read {\n file {space folder/tile.<UDIM>.exr}\n name tile\n}\nRead {\n file {$WARP_UP_ISO_UNDEFINED/file.exr}\n name env\n}\n')
         plan=scan(self.script); self.assertEqual(len(plan.assets[0].files),1); self.assertEqual(plan.assets[1].status,'待处理')
     def test_malformed(self):
         self.script.write_text('Read {\n file hello.exr\n')

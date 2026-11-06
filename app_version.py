@@ -2,6 +2,9 @@
 import json
 from pathlib import Path
 
-VERSION = json.loads(
+METADATA = json.loads(
     Path(__file__).with_name('version.json').read_text(encoding='utf-8')
-)['version']
+)
+APP_NAME = METADATA['name']
+VERSION = METADATA['version']
+APP_LABEL = f'{APP_NAME} {VERSION}'

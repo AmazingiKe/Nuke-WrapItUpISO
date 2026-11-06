@@ -293,7 +293,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             continue
         stem = re.sub(r'[^A-Za-z0-9_]', '_', Path(plugin.source).stem)[:48] or 'Gizmo'
         suffix = hashlib.sha256(os.path.normcase(plugin.source).encode('utf-8')).hexdigest()[:12]
-        base = f'NBP_{stem}_{suffix}'
+        base = f'WUI_{stem}_{suffix}'
         alias, counter = base, 2
         while alias.casefold() in occupied:
             alias = f'{base}_{counter}'
