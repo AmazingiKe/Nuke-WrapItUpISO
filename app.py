@@ -12,7 +12,7 @@ from tkinter.scrolledtext import ScrolledText
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from core import Cancelled, DependencyError, package, scan
 from gizmo import Plugin
-from app_version import APP_LABEL
+from app_version import APP_LABEL, APP_TAGLINE
 from project_picker import ask_projects
 from project_discovery import DiscoveryWorker
 from scan_cache import ScanSession
@@ -317,7 +317,7 @@ class Worker(threading.Thread):
 class Window(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_LABEL)
+        self.title(f'{APP_LABEL} · {APP_TAGLINE}')
         self.geometry('1160x880')
         self.minsize(780, 640)
         self.paths = []

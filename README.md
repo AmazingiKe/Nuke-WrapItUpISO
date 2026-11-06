@@ -1,12 +1,12 @@
 # Warp-Up-ISO
 
-> Nuke 工程素材与插件打包工具。
+> Fuck Vendor Nuke Pack. One Click, No Bullshit.
 
 独立 Python 应用，使用 Tkinter / ttk 界面，直接读取 `.nk`，无需安装或启动 Nuke。
 
 ## Windows 启动
 
-1. 双击 `tools/dist/Warp-Up-ISO 1.1.26.exe`。这是单文件发布版，已内置 Python 运行时、Tcl/Tk 和拖放依赖，目标电脑无需安装 Python 或 Python Launcher。
+1. 双击 `tools/dist/Warp-Up-ISO 1.1.27.exe`。这是单文件发布版，已内置 Python 运行时、Tcl/Tk 和拖放依赖，目标电脑无需安装 Python 或 Python Launcher。
 2. 点击左侧工程列表上方的 `+`，打开 Windows 原生文件选择器。支持 Ctrl / Shift 多选文件夹、`.nk` 工程，也可混选，点击“添加选中项”加入列表。双击文件夹进入目录；仅选择 `.nk` 时也可点击“打开”。文件夹会递归查找 `.nk`，没有工程时在日志提示，重复工程不会重复添加。仍支持直接拖入文件或文件夹。
 3. 点击工具栏的放大镜图标“扫描素材与插件”。左侧选择工程，右侧分别列出素材和 Gizmo / 插件条目，点击条目查看来源与问题。左右分栏宽度可拖动调整。
 4. 将一个文件夹拖到“输出目录”输入框，自动使用该路径；也可点击 `...` 选择目录。点击三角形图标“开始打包”。拖到其他区域的文件夹仍用于添加工程。
@@ -17,7 +17,7 @@
 
 重新扫描、取消或再次打包失败时，仍可打开该工程上一次成功打包的目录和 README；下一次成功打包后入口更新到新目录。移除工程或清空列表时清除对应记录。
 
-分发时只需复制 `Warp-Up-ISO 1.1.26.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
+分发时只需复制 `Warp-Up-ISO 1.1.27.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
 
 扫描和复制在后台线程执行，窗口保持可操作。连续双色进度条中，深色代表已处理工程，浅色紧接深色，代表当前工程在当前阶段的任务进度；不绘制工程分隔线，进度变化采用短暂平滑过渡。上方保留工程数量，下方显示任务数、百分比和正在处理的文件；复制阶段按文件数计任务，大文件内部仍按复制量平滑更新。任务数量尚未确定时，浅色部分贴着深色边缘缓慢伸缩。点击“取消”会清理当前未完成工程，保留已完成结果。
 
@@ -72,7 +72,7 @@ python -m pip install -r tools/requirements-build.txt
 python -m PyInstaller --workpath tools/build --distpath tools/dist tools/Warp-Up-ISO.spec
 ```
 
-生成的程序为 `tools/dist/Warp-Up-ISO 1.1.26.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
+生成的程序为 `tools/dist/Warp-Up-ISO 1.1.27.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
 界面使用 Tkinter，文件拖入使用 `tkinterdnd2` 扩展；不依赖 Qt。
 
 ## 收集规则

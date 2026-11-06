@@ -8,3 +8,4 @@ METADATA = json.loads(
 APP_NAME = METADATA['name']
 VERSION = METADATA['version']
 APP_LABEL = f'{APP_NAME} {VERSION}'
+APP_TAGLINE = METADATA['tagline']
