@@ -1,4 +1,4 @@
-# Warp-Up-ISO
+# WrapItUpISO
 
 > Fuck Vendor Nuke Pack. One Click, No Bullshit.
 
@@ -8,11 +8,11 @@
 
 **[下载 Windows 版](https://github.com/AmazingiKe/Warp-Up-ISO/releases/latest)** · [查看所有版本](https://github.com/AmazingiKe/Warp-Up-ISO/releases) · [详细说明](docs/reference.md)
 
-![Warp-Up-ISO 界面预览：批量工程列表、素材与插件检查、打包进度和日志](docs/images/warp-up-iso-preview.png)
+![WrapItUpISO 界面预览：批量工程列表、素材与插件检查、打包进度和日志](docs/images/wrapitupiso-preview.png)
 
 ## 开始使用
 
-从 Releases 的 **Assets** 下载 `Warp-Up-ISO 1.1.27.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
+从 Releases 的 **Assets** 下载 `WrapItUpISO 1.1.27.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
 
 1. **添加工程**：拖入 `.nk` 文件或文件夹，也可以点击 `+` 多选添加。
 2. **扫描依赖**：点击放大镜，检查素材与插件状态；有问题时点击条目查看原因。
