@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from wrapitupiso.engine.core import package, scan
-from wrapitupiso.engine.relink import dependency_key, find_candidates, manual_path
+from wrapitupiso.engine.relink import dependency_key, find_dropped_candidates, manual_path
 
 
 def verify(nuke, font):
@@ -50,9 +50,9 @@ nuke.execute(writer, 1001, 1003)
                    dependency_key(plan.plugins[0]): str(gizmo),
                    dependency_key(next(a for a in plan.assets if a.kind == 'font')): str(font_path)}
         plan = scan(script, automatic_plugins=True, replacements=choices)
-        matches, errors = find_candidates(plan.assets, root / 'search')
+        matches, errors, preferred = find_dropped_candidates(plan.assets, [root / 'search', font_path])
         assert not errors
-        choices.update({key: paths[0] for key, paths in matches.items() if len(paths) == 1})
+        choices.update(preferred)
         plan = scan(script, automatic_plugins=True, replacements=choices)
         assert not plan.plugin_blockers
         assert all(asset.files for asset in plan.assets)
@@ -86,7 +86,7 @@ Path({str(renders / 'nodes.json')!r}).write_text(json.dumps(values))
         results.append({'variant': label, 'nodes': json.loads((renders / 'nodes.json').read_text()),
                         'renders': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in images}})
     assert results[0]['renders'] == results[1]['renders']
-    return {'passed': True, 'fixture': str(root), 'nuke': str(nuke), 'original_unchanged': True, 'results': results}
+    return {'passed': True, 'fixture': str(root), 'nuke': str(nuke), 'original_unchanged': True, 'mixed_drop_matching': True, 'results': results}
 
 
 if __name__ == '__main__':

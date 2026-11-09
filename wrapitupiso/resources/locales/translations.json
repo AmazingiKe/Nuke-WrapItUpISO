@@ -1599,6 +1599,16 @@
     "en": "Choose File…",
     "ja": "ファイルを指定…"
   },
+  "relink.drop_hint": {
+    "zh-CN": "Ctrl / Shift 多选节点后，拖入文件或文件夹预览替换",
+    "en": "Select nodes with Ctrl / Shift, then drop files or folders to review replacements",
+    "ja": "Ctrl / Shift で複数選択し、ファイルやフォルダーをドロップして置換を確認"
+  },
+  "relink.drop_preview_hint": {
+    "zh-CN": "仅替换选中节点。同名文件优先匹配；改名文件可从候选中选择。确认后随工程打包，取消保留原路径。",
+    "en": "Replace selected nodes only. Matching names are preferred; choose renamed files from the candidates. Confirm to include replacements when packaging, or cancel to keep current paths.",
+    "ja": "選択したノードのみ置換します。同名ファイルを優先し、名前が違う場合は候補から選択してください。確定したファイルはパッケージに含まれ、キャンセルすると元のパスを維持します。"
+  },
   "relink.find": {
     "zh-CN": "文件夹查找…",
     "en": "Find in Folder…",
@@ -1725,9 +1735,9 @@
     "ja": "OFX / バイナリプラグインは移行先でのインストールが必要です。ファイル指定だけでは移植できません。"
   },
   "relink.search_errors": {
-    "zh-CN": "部分目录无法读取：\n{errors}",
-    "en": "Some folders could not be read:\n{errors}",
-    "ja": "一部のフォルダーを読み取れませんでした:\n{errors}"
+    "zh-CN": "部分路径无法读取：\n{errors}",
+    "en": "Some paths could not be read:\n{errors}",
+    "ja": "一部のパスを読み取れませんでした:\n{errors}"
   },
   "relink.failed": {
     "zh-CN": "路径替换未完成：{error}",

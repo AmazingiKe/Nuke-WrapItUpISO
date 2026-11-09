@@ -30,7 +30,9 @@ class WindowTests(unittest.TestCase):
         self.source = self.folder / '中文 shot.nk'
         (self.folder / 'plate.exr').write_bytes(b'pixels')
         self.source.write_text('Read {\n file plate.exr\n name Plate\n}\n', encoding='utf-8')
-        self.settings_path = self.folder / 'wrapitupiso_settings.json'
+        # App preferences normally live separately from project media. Atomic
+        # settings writes must not change the directory watched by cache tests.
+        self.settings_path = self.folder / 'preferences' / 'wrapitupiso_settings.json'
         self.window = Window(settings_path=self.settings_path, system_language='zh_CN')
         self.window.show()
         self.qt.processEvents()
@@ -509,6 +511,117 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(self.drop(self.window.output_entry, [self.source]))
         self.assertFalse(self.drop(self.window.output_entry, [self.folder, self.source]))
 
+    def test_dependency_drop_previews_selected_rows_then_packages_replacements(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        self.source.write_text('Read {\n file lost/plate.exr\n name Plate\n}\nRead {\n file lost/other.exr\n name Other\n}\nRead {\n file plate.exr\n name Keep\n}\n')
+        original = self.source.read_bytes()
+        other = self.folder / 'nested/other.exr'
+        other.parent.mkdir()
+        other.write_bytes(b'other pixels')
+        self.add_scan()
+        self.window.table.topLevelItem(0).setSelected(True)
+        self.window.table.topLevelItem(1).setSelected(True)
+        seen = []
+        def review(dialog):
+            seen.append(dialog)
+            self.assertEqual(len(dialog.keys), 2)
+            self.assertEqual(len(dialog.choices()), 2)
+            return RelinkDialog.DialogCode.Accepted
+        with patch.object(RelinkDialog, 'exec', review):
+            self.assertTrue(self.drop(self.window.table.viewport(), [self.folder / 'plate.exr', other.parent]))
+            self.wait_finished()
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(self.window.paths, [self.source])
+        plan = self.window.current_plan()
+        self.assertEqual(len(plan.replacements), 2)
+        self.assertFalse(plan.assets[2].replacement)
+        self.pack()
+        output = self.window.packaged_paths[self.source]
+        self.assertEqual((output / 'media/other/other.exr').read_bytes(), b'other pixels')
+        self.assertEqual((output / 'media/plate/plate.exr').read_bytes(), b'pixels')
+        self.assertEqual(self.source.read_bytes(), original)
+
+    def test_dependency_drop_cancel_preserves_plan_selection_and_project_list(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        self.add_scan()
+        self.window.table.topLevelItem(0).setSelected(True)
+        original = self.window.current_plan()
+        with patch.object(RelinkDialog, 'exec', return_value=RelinkDialog.DialogCode.Rejected) as preview:
+            self.assertTrue(self.drop(self.window.table.viewport(), [self.folder]))
+            self.wait_finished()
+        preview.assert_called_once()
+        self.assertIs(self.window.current_plan(), original)
+        self.assertFalse(self.window.replacements)
+        self.assertEqual(len(self.window.table.selectedItems()), 1)
+        self.assertEqual(self.window.paths, [self.source])
+
+    def test_renamed_drop_requires_explicit_choice_in_preview(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        first, second = self.folder / 'new_a.exr', self.folder / 'new_b.exr'
+        first.write_bytes(b'new a')
+        second.write_bytes(b'new b')
+        self.add_scan()
+        self.window.table.topLevelItem(0).setSelected(True)
+        def review(dialog):
+            self.assertFalse(dialog.choices())
+            self.assertFalse(dialog.apply_button.isEnabled())
+            dialog.combos[0].setCurrentIndex(dialog.combos[0].findData(str(second)))
+            self.assertTrue(dialog.apply_button.isEnabled())
+            return RelinkDialog.DialogCode.Accepted
+        with patch.object(RelinkDialog, 'exec', review):
+            self.drop(self.window.table.viewport(), [first, second])
+            self.wait_finished()
+        self.assertEqual(self.window.current_plan().assets[0].source, str(second))
+
+    def test_dependency_drop_without_selection_does_not_add_projects(self):
+        self.add_scan()
+        self.window.table.clearSelection()
+        other = self.folder / 'other.nk'
+        other.write_text('Root {\n}\n')
+        self.assertFalse(self.drop(self.window.table.viewport(), [other]))
+        self.wait_finished()
+        self.assertEqual(self.window.paths, [self.source])
+
+    def test_dependency_drop_cancel_during_search_keeps_previous_plan(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        self.add_scan()
+        self.window.table.topLevelItem(0).setSelected(True)
+        original = self.window.current_plan()
+        entered, release = threading.Event(), threading.Event()
+        def slow_search(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return find_dropped_candidates(*args, **kwargs)
+        with patch('wrapitupiso.ui.workers.find_dropped_candidates', side_effect=slow_search), patch.object(RelinkDialog, 'exec') as preview:
+            try:
+                self.drop(self.window.table.viewport(), [self.folder])
+                self.assertTrue(entered.wait(2))
+                self.assertFalse(self.drop(self.window.table.viewport(), [self.source]))
+                self.window.stop()
+            finally:
+                release.set()
+                self.wait_finished()
+        preview.assert_not_called()
+        self.assertIs(self.window.current_plan(), original)
+        self.assertFalse(self.window.replacements)
+
+    def test_dependency_drop_stays_with_original_project_after_selection_changes(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        other = self.folder / 'other.nk'
+        other.write_text('Read {\n file missing.exr\n name Other\n}\n')
+        self.source.write_text('Read {\n file lost/plate.exr\n name Plate\n}\n')
+        self.add_scan([self.source, other])
+        self.select_project(self.source)
+        self.window.table.topLevelItem(0).setSelected(True)
+        with patch.object(RelinkDialog, 'exec', return_value=RelinkDialog.DialogCode.Accepted):
+            self.drop(self.window.table.viewport(), [self.folder / 'plate.exr'])
+            self.select_project(other)
+            self.wait_finished()
+        self.assertTrue(self.window.plans[self.source][0].assets[0].files)
+        self.assertFalse(self.window.plans[other][0].assets[0].files)
+        self.assertNotIn(other, self.window.replacements)
+
     def test_scan_and_package_from_buttons(self):
         self.add_scan()
         row = self.window.table.topLevelItem(0)
@@ -578,8 +691,11 @@ class WindowTests(unittest.TestCase):
         self.window.only_issues.setChecked(True)
         self.assertEqual(self.window.table.topLevelItemCount(), 1)
         self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
-        self.window.copy_asset_path()
-        self.assertEqual(self.qt.clipboard().text(), str(self.folder / 'missing.exr'))
+        # Verify the requested clipboard content without depending on another
+        # desktop process owning or locking the Windows clipboard.
+        with patch('wrapitupiso.ui.window.QApplication.clipboard') as clipboard:
+            self.window.copy_asset_path()
+            clipboard.return_value.setText.assert_called_once_with(str(self.folder / 'missing.exr'))
         QTest.mouseClick(self.window.table.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(50, 200))
         self.assertFalse(self.window.table.selectedItems())
         self.window.project_table.selectAll()

@@ -54,31 +54,60 @@ def manual_path(dependency, selected):
 
 
 def find_candidates(dependencies, folder, cancel=lambda: False, progress=lambda a,b,c: None):
-    from wrapitupiso.engine.core import Cancelled, SEQUENCE
-    from wrapitupiso.engine.gizmo import Plugin
+    from wrapitupiso.engine.core import Cancelled
     folder = Path(folder).expanduser().resolve()
     if cancel(): raise Cancelled()
     if not folder.is_dir(): raise FileNotFoundError(str(folder))
+    files, errors, _ = collect_candidate_files([folder], cancel, progress)
+    return match_candidate_files(dependencies, files, cancel), errors
+
+
+def collect_candidate_files(sources, cancel, progress):
+    from wrapitupiso.engine.core import Cancelled
     files, errors = {}, []
+    seen_files, seen_dirs, direct = set(), set(), []
     def failed(error): errors.append(str(error))
-    count = 0
-    for directory, dirs, names in os.walk(folder, onerror=failed, followlinks=False):
+    def add(path):
         if cancel(): raise Cancelled()
-        descend = []
-        for name in sorted(dirs):
+        if path not in seen_files:
+            seen_files.add(path)
+            files.setdefault(path.name.casefold(), []).append(path)
+    for source in sources:
+        if cancel(): raise Cancelled()
+        try:
+            if source.is_file():
+                add(source)
+                if source not in direct: direct.append(source)
+                continue
+            if not source.is_dir(): raise FileNotFoundError(str(source))
+        except OSError as error:
+            failed(error)
+            continue
+        for directory, dirs, names in os.walk(source, onerror=failed, followlinks=False):
             if cancel(): raise Cancelled()
-            try:
-                metadata = (Path(directory) / name).lstat()
-                junction = getattr(metadata, 'st_reparse_tag', 0) == getattr(stat, 'IO_REPARSE_TAG_MOUNT_POINT', 0xA0000003)
-                if not stat.S_ISLNK(metadata.st_mode) and not junction: descend.append(name)
-            except OSError as error:
-                failed(error)
-        dirs[:] = descend
-        for name in names:
-            if cancel(): raise Cancelled()
-            files.setdefault(name.casefold(), []).append(Path(directory) / name)
-            count += 1
-        progress(count, 0, str(directory))
+            directory = Path(directory)
+            if directory in seen_dirs:
+                dirs[:] = []
+                continue
+            seen_dirs.add(directory)
+            descend = []
+            for name in sorted(dirs):
+                if cancel(): raise Cancelled()
+                try:
+                    metadata = (directory / name).lstat()
+                    junction = getattr(metadata, 'st_reparse_tag', 0) == getattr(stat, 'IO_REPARSE_TAG_MOUNT_POINT', 0xA0000003)
+                    if not stat.S_ISLNK(metadata.st_mode) and not junction: descend.append(name)
+                except OSError as error:
+                    failed(error)
+            dirs[:] = descend
+            for name in names: add(directory / name)
+            progress(len(seen_files), 0, str(directory))
+    return files, errors, direct
+
+
+def match_candidate_files(dependencies, files, cancel):
+    from wrapitupiso.engine.core import Cancelled, SEQUENCE
+    from wrapitupiso.engine.gizmo import Plugin
     matches, sequence_cache = {}, {}
     for dependency in dependencies:
         if cancel(): raise Cancelled()
@@ -110,4 +139,35 @@ def find_candidates(dependencies, folder, cancel=lambda: False, progress=lambda 
         else:
             candidates = files.get(name.casefold(), [])
         matches[key] = sorted({str(path) for path in candidates}, key=str.casefold)
-    return matches, errors
+    return matches
+
+
+def find_dropped_candidates(dependencies, sources, cancel=lambda: False, progress=lambda a,b,c: None):
+    """Match names first; renamed explicit files remain choices in the preview."""
+    from wrapitupiso.engine.core import Cancelled
+    from wrapitupiso.engine.font_scan import FONT_EXTENSIONS
+    from wrapitupiso.engine.gizmo import Plugin
+    sources = list(dict.fromkeys(Path(path).expanduser().resolve() for path in sources))
+    dependencies = list(dependencies)
+    files, errors, direct = collect_candidate_files(sources, cancel, progress)
+    matches = match_candidate_files(dependencies, files, cancel)
+    preferred = {key: paths[0] for key, paths in matches.items() if len(paths) == 1}
+    for dependency in dependencies:
+        if cancel(): raise Cancelled()
+        key = dependency_key(dependency)
+        if matches[key]: continue
+        candidates = set()
+        for path in direct:
+            if cancel(): raise Cancelled()
+            if not isinstance(dependency, Plugin) and dependency.kind != 'font':
+                if path.suffix.lower() in PLUGIN_EXTENSIONS | FONT_EXTENSIONS | {'.nk', '.nuke', '.py', '.pyc'}: continue
+            try:
+                candidates.add(manual_path(dependency, path))
+            except (OSError, ValueError):
+                continue
+        matches[key] = sorted(candidates, key=str.casefold)
+        # A single explicit file is an intentional replacement for the selection.
+        # Multiple renamed files must never be paired by row or drop order.
+        if len(sources) == len(direct) == len(candidates) == 1:
+            preferred[key] = matches[key][0]
+    return matches, errors, preferred

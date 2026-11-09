@@ -1,4 +1,6 @@
 """Review unique and ambiguous dependency matches before applying them."""
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QHeaderView,
                               QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
@@ -8,13 +10,14 @@ from wrapitupiso.engine.relink import dependency_key
 
 
 class RelinkDialog(QDialog):
-    def __init__(self, parent, dependencies, matches, errors, *, project_name=''):
+    def __init__(self, parent, dependencies, matches, errors, preferred=None, *, project_name=''):
         super().__init__(parent)
         tr = parent.translator
         self.setWindowTitle(tr('relink.preview') + (' · ' + project_name if project_name else ''))
-        self.resize(min(1100, self.screen().availableGeometry().width() - 60), 560)
+        available = self.screen().availableGeometry()
+        self.resize(min(960, available.width() - 60), min(available.height() - 80, 260 + min(len(dependencies), 8) * 28))
         layout = QVBoxLayout(self)
-        hint = QLabel(tr('relink.preview_hint'))
+        hint = QLabel(tr('relink.drop_preview_hint' if preferred is not None else 'relink.preview_hint'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         counts = [len(matches.get(dependency_key(item), [])) for item in dependencies]
@@ -43,9 +46,13 @@ class RelinkDialog(QDialog):
             candidates = matches.get(key, [])
             combo.addItem(tr('relink.keep') if candidates else tr('relink.not_found'), None)
             for path in candidates:
-                combo.addItem(path, path)
+                candidate = Path(path)
+                combo.addItem(f'{candidate.name}  —  {candidate.parent}', path)
                 combo.setItemData(combo.count() - 1, path, Qt.ItemDataRole.ToolTipRole)
-            if len(candidates) == 1: combo.setCurrentIndex(1)
+            if preferred is None:
+                if len(candidates) == 1: combo.setCurrentIndex(1)
+            elif preferred.get(key) in candidates:
+                combo.setCurrentIndex(candidates.index(preferred[key]) + 1)
             combo.setEnabled(bool(candidates))
             combo.currentIndexChanged.connect(self.update_apply)
             table.setItemWidget(item, 2, combo)

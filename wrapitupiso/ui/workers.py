@@ -5,7 +5,7 @@ import time
 from wrapitupiso.config.i18n import status_code, message as msg, fmt, join_messages, error_message
 from wrapitupiso.engine.core import Cancelled, DependencyError, package, scan
 from wrapitupiso.engine.scan_cache import ScanSession
-from wrapitupiso.engine.relink import find_candidates
+from wrapitupiso.engine.relink import find_candidates, find_dropped_candidates
 
 
 def readable_error(error):
@@ -161,17 +161,22 @@ class Worker(threading.Thread):
 
 
 class RelinkWorker(Worker):
-    def __init__(self, plan, events, session, choices, *, folder=None, targets=None, before_run=None):
+    def __init__(self, plan, events, session, choices, *, folder=None, sources=None, targets=None, before_run=None):
         super().__init__([plan.script], None, events, session, before_run=before_run)
         self.plan, self.choices = plan, dict(choices)
         self.folder, self.targets = folder, list(targets or [])
+        self.sources = list(sources) if sources is not None else None
+        self.searching = folder is not None or sources is not None
         self.result = self.error = None
 
     def run(self):
         try:
             if self.before_run: self.before_run()
             if self.cancelled.is_set(): raise Cancelled()
-            if self.folder is not None:
+            if self.sources is not None:
+                self.result = find_dropped_candidates(self.targets, self.sources, self.cancelled.is_set,
+                    lambda *values: self.report_progress(msg('relink.searching'), *values))
+            elif self.folder is not None:
                 self.result = find_candidates(self.targets, self.folder, self.cancelled.is_set,
                     lambda *values: self.report_progress(msg('relink.searching'), *values))
             else:

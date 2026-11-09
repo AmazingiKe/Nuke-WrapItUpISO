@@ -213,7 +213,12 @@ class Window(QMainWindow):
             relink_bar.addWidget(button)
         relink_bar.addStretch(1)
         details.body.addLayout(relink_bar)
-        self.table = self._tree(lambda: not self.busy(), msg('empty.dependencies'), msg('empty.dependencies_hint'))
+        drop_hint = self._label(msg('relink.drop_hint'))
+        drop_hint.setObjectName('muted')
+        drop_hint.setWordWrap(True)
+        drop_hint.setContentsMargins(8, 4, 8, 4)
+        details.body.addWidget(drop_hint)
+        self.table = self._tree(self.can_drop_dependencies, msg('empty.dependencies'), msg('empty.dependencies_hint'))
         self.bind(self.table, 'setAccessibleName', msg('access.dependencies'))
         self.bind(self.table, 'setHeaderLabels', [msg('column.node'), msg('column.type'), msg('column.source'), msg('column.files'), msg('column.status')])
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -221,7 +226,7 @@ class Window(QMainWindow):
         for column, width in enumerate((140, 58, 350, 62, 54)): self.table.setColumnWidth(column, width)
         self.table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self.show_item_status)
-        self.table.filesDropped.connect(self.add)
+        self.table.filesDropped.connect(self.drop_dependencies)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_asset_menu)
         details.body.addWidget(self.table)
@@ -553,13 +558,15 @@ class Window(QMainWindow):
 
     def dragEnterEvent(self, event):
         over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
-        if not self.busy() and not over_output and local_paths(event.mimeData()): event.acceptProposedAction()
+        over_dependencies = self.table.rect().contains(self.table.mapFrom(self, event.position().toPoint()))
+        if not self.busy() and not over_output and not over_dependencies and local_paths(event.mimeData()): event.acceptProposedAction()
         else: event.ignore()
 
     def dropEvent(self, event):
         paths = local_paths(event.mimeData())
         over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
-        if paths and not self.busy() and not over_output:
+        over_dependencies = self.table.rect().contains(self.table.mapFrom(self, event.position().toPoint()))
+        if paths and not self.busy() and not over_output and not over_dependencies:
             self.add(paths)
             event.acceptProposedAction()
         else: event.ignore()
@@ -641,6 +648,14 @@ class Window(QMainWindow):
         cached = self.plans.get(paths[0]) if paths else None
         return cached[0] if cached else None
 
+    def can_drop_dependencies(self):
+        return not self.busy() and self.current_plan() is not None and bool(self.selected_dependencies())
+
+    def drop_dependencies(self, paths):
+        if not paths or not self.can_drop_dependencies(): return
+        plan = self.current_plan()
+        self.start_relink(dict(plan.replacements), sources=paths, targets=self.selected_dependencies(), plan=plan)
+
     def update_relink_controls(self, *, busy=None):
         plan = self.current_plan()
         selected = self.selected_dependencies()
@@ -684,17 +699,18 @@ class Window(QMainWindow):
         for dependency in self.selected_dependencies(): choices.pop(dependency_key(dependency), None)
         self.start_relink(choices)
 
-    def start_relink(self, choices, *, folder=None, targets=None, plan=None):
+    def start_relink(self, choices, *, folder=None, sources=None, targets=None, plan=None):
         if self.busy(): return
         plan = plan or self.current_plan()
-        if plan is None or (folder is None and choices == plan.replacements): return
+        searching = folder is not None or sources is not None
+        if plan is None or (not searching and choices == plan.replacements): return
         self.relink_selection = {dependency_key(item) for item in self.selected_dependencies()}
         self.settings_writer.pause()
-        self.worker = RelinkWorker(plan, self.events, self.session, choices, folder=folder, targets=targets,
+        self.worker = RelinkWorker(plan, self.events, self.session, choices, folder=folder, sources=sources, targets=targets,
                                    before_run=self.settings_writer.wait_idle)
         self.set_busy_controls(True)
         self.progress.set_tasks(0, 0)
-        self.bind(self.progress_text, 'setText', msg('relink.searching' if folder else 'relink.applying'))
+        self.bind(self.progress_text, 'setText', msg('relink.searching' if searching else 'relink.applying'))
         self.worker.start()
 
     def relink_finished(self, worker):
@@ -710,7 +726,7 @@ class Window(QMainWindow):
         elif worker.error:
             self.bind(self.progress_text, 'setText', msg('status.failed'))
             self.append_log(msg('relink.failed', error=error_message(worker.error)), 'error')
-        elif worker.folder is not None:
+        elif worker.searching:
             dialog = RelinkDialog(self, worker.targets, *worker.result, project_name=worker.plan.script.name)
             try:
                 if dialog.exec() == RelinkDialog.DialogCode.Accepted:

@@ -211,3 +211,53 @@ class RelinkTests(unittest.TestCase):
         updated = scan(self.script, replacements=choices)
         self.assertFalse(updated.assets[0].replacement)
         self.assertTrue(any(getattr(warning, 'key', '') == 'relink.stale' for warning in updated.warnings))
+
+    def test_dropped_files_and_folders_match_together_without_duplicate_candidates(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        plan = self.project('lost/Plate.%04d.exr', 'Read {\n file lost/logo.png\n name Logo\n}\n')
+        frame = self.file('deep/plate.1001.exr')
+        self.file('deep/plate.1002.exr')
+        logo = self.file('logo.png')
+        matches, errors, preferred = find_dropped_candidates(plan.assets, [self.search, frame, logo, self.search / 'deep'])
+        self.assertFalse(errors)
+        sequence_key, logo_key = map(dependency_key, plan.assets)
+        self.assertEqual(matches[sequence_key], [str(frame.with_name('plate.%04d.exr'))])
+        self.assertEqual(matches[logo_key], [str(logo)])
+        self.assertEqual(preferred, {key: paths[0] for key, paths in matches.items()})
+
+    def test_renamed_dropped_files_are_manual_candidates_not_positional_matches(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        plan = self.project(extra='Read {\n file lost/other.exr\n name Other\n}\n')
+        first, second = self.file('new_a.exr'), self.file('new_b.exr')
+        matches, errors, preferred = find_dropped_candidates(plan.assets, [second, first])
+        self.assertFalse(errors)
+        self.assertFalse(preferred)
+        for paths in matches.values(): self.assertEqual(paths, [str(first), str(second)])
+
+    def test_single_dropped_frame_can_replace_multiple_selected_sequences(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        plan = self.project('lost/plate.####.exr', 'Read {\n file other.%04d.exr\n name Other\n}\n')
+        frame = self.file('new.1001.exr')
+        matches, _, preferred = find_dropped_candidates(plan.assets, [frame])
+        self.assertEqual(len(preferred), 2)
+        self.assertEqual([Path(preferred[dependency_key(a)]).name for a in plan.assets], ['new.####.exr', 'new.%04d.exr'])
+
+    def test_dropped_candidates_respect_font_and_plugin_types(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        plan = self.project(extra='Text2 {\n font {invalid}\n name Title\n}\nTool {\n}\n')
+        font, gizmo, media = self.font_file(), self.file('new.gizmo'), self.file('new.exr')
+        matches, _, preferred = find_dropped_candidates([*plan.assets, *plan.plugins], [font, gizmo, media, self.script])
+        self.assertFalse(preferred)
+        for item in [*plan.assets, *plan.plugins]:
+            expected = gizmo if item in plan.plugins else font if item.kind == 'font' else media
+            self.assertEqual(matches[dependency_key(item)], [str(expected)])
+
+    def test_dropped_missing_input_reports_error_and_search_can_cancel(self):
+        from wrapitupiso.engine.relink import find_dropped_candidates
+        plan = self.project()
+        matches, errors, preferred = find_dropped_candidates(plan.assets, [self.root / 'gone'])
+        self.assertTrue(errors)
+        self.assertFalse(preferred)
+        self.assertEqual(matches[dependency_key(plan.assets[0])], [])
+        with self.assertRaises(Cancelled):
+            find_dropped_candidates(plan.assets, [self.search], cancel=lambda: True)
