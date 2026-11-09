@@ -435,9 +435,9 @@
     "ja": "このアプリについて"
   },
   "about.description": {
-    "zh-CN": "{label}\n\nNuke 工程批量交付工具\nQt6 / PySide6\n\n{tagline}",
-    "en": "{label}\n\nBatch delivery tool for Nuke projects\nQt6 / PySide6\n\n{tagline}",
-    "ja": "{label}\n\nNuke プロジェクトの一括納品ツール\nQt6 / PySide6\n\n{tagline}"
+    "zh-CN": "{label}\n\nNuke 工程批量交付工具\nQt6 / PySide6\n\n作者：Amazing_iKe\n邮箱：1925250542@qq.com\nWeChat & bilibili：Amazing_iKe\n\n{tagline}",
+    "en": "{label}\n\nBatch delivery tool for Nuke projects\nQt6 / PySide6\n\nAuthor: Amazing_iKe\nEmail: 1925250542@qq.com\nWeChat & bilibili: Amazing_iKe\n\n{tagline}",
+    "ja": "{label}\n\nNuke プロジェクトの一括納品ツール\nQt6 / PySide6\n\n作者：Amazing_iKe\nメール：1925250542@qq.com\nWeChat & bilibili：Amazing_iKe\n\n{tagline}"
   },
   "progress.discovery": {
     "zh-CN": "正在查找工程…",
