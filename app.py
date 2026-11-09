@@ -1,21 +1,24 @@
-"""Tkinter UI; workers communicate with the UI through a queue."""
+"""Qt6 desktop UI; background workers deliver events to the Qt main thread."""
 from pathlib import Path
 from queue import Empty, Queue
-import math
 import os
+import sys
 import threading
 import time
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from tkinter.scrolledtext import ScrolledText
 
-from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
+from PySide6.QtCore import Qt, QTimer, QSize, QUrl
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QKeySequence, QPixmap, QTextCharFormat, QTextCursor
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QFileDialog, QFrame,
+    QHBoxLayout, QHeaderView, QLabel, QMainWindow, QMenu, QMessageBox, QPushButton,
+    QSizePolicy, QSplitter, QTextEdit, QToolButton, QTreeWidgetItem, QVBoxLayout, QWidget)
+
 from core import Cancelled, DependencyError, package, scan
 from gizmo import Plugin
-from app_version import APP_LABEL, APP_NAME, APP_TAGLINE
+from app_version import APP_LABEL, APP_NAME, APP_TAGLINE, VERSION
 from project_picker import ask_projects
 from project_discovery import DiscoveryWorker
 from scan_cache import ScanSession
+from qt_widgets import COLORS, CombinedProgress, DirectoryEdit, FileTree, Panel, apply_theme, local_paths, tool_icon
 
 
 def readable_error(error):
@@ -60,144 +63,6 @@ def brief_asset_summary(plan):
     if len(plan.warnings) > 1:
         parts.append('有依赖提示')
     return '，'.join(parts)
-
-
-class ToolTip:
-    """Short labels for icon buttons, also shown on keyboard focus."""
-    def __init__(self, widget, text):
-        self.widget, self.text = widget, text
-        self.pending = None
-        self.popup = None
-        for event in ('<Enter>', '<FocusIn>'):
-            widget.bind(event, self.schedule, add='+')
-        for event in ('<Leave>', '<FocusOut>', '<ButtonPress>', '<Destroy>'):
-            widget.bind(event, self.hide, add='+')
-
-    def schedule(self, event=None):
-        self.hide()
-        self.pending = self.widget.after(450, self.show)
-
-    def show(self):
-        self.pending = None
-        if not self.widget.winfo_viewable():
-            return
-        self.popup = tk.Toplevel(self.widget)
-        self.popup.withdraw()
-        self.popup.overrideredirect(True)
-        self.popup.attributes('-topmost', True)
-        ttk.Label(self.popup, text=self.text, padding=(8, 5),
-                  relief='solid', borderwidth=1).pack()
-        self.popup.update_idletasks()
-        x = min(self.widget.winfo_rootx(),
-                self.widget.winfo_screenwidth() - self.popup.winfo_reqwidth() - 8)
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
-        self.popup.geometry(f'+{max(0, x)}+{y}')
-        self.popup.deiconify()
-
-    def hide(self, event=None):
-        if self.pending is not None:
-            self.widget.after_cancel(self.pending)
-            self.pending = None
-        if self.popup is not None:
-            self.popup.destroy()
-            self.popup = None
-
-
-class CombinedProgress(tk.Canvas):
-    """One track: completed projects, followed by work within the current project."""
-    def __init__(self, parent):
-        super().__init__(parent, height=24, highlightthickness=0, background='#e4e9f0')
-        self.projects_done = 0
-        self.projects_total = 1
-        self.task_fraction = 0
-        self.animation_id = None
-        self.transition_id = None
-        self.display_fractions = (0, 0)
-        self.pulse = 0
-        self.create_rectangle(0, 0, 0, 0, fill='#9ec8e8', outline='', tags='tasks')
-        self.create_rectangle(0, 0, 0, 0, fill='#245780', outline='', tags='projects')
-        self.bind('<Configure>', lambda event: self.redraw())
-
-    def set_projects(self, done, total):
-        self.stop_animation()
-        self.projects_total = max(1, total)
-        self.projects_done = max(0, min(done, self.projects_total))
-        self.task_fraction = 0
-        if not self.projects_done:
-            self.display_fractions = self.fractions()
-            self.redraw()
-        else:
-            self.transition_to(self.fractions())
-
-    def set_tasks(self, done, total):
-        if not total and self.animation_id is not None:
-            return
-        self.stop_animation()
-        self.task_fraction = max(0, min(done / total, 1)) if total else 0
-        if not total and self.projects_done < self.projects_total:
-            self.pulse = 0
-            self.animate()
-        else:
-            self.transition_to(self.fractions())
-
-    def fractions(self):
-        dark = self.projects_done / self.projects_total
-        light = min(1, dark + self.task_fraction / self.projects_total)
-        return dark, light
-
-    def redraw(self):
-        width, height = self.winfo_width(), self.winfo_height()
-        dark, light = self.display_fractions
-        # Both fills share the exact same edge; no dividers, borders or gaps.
-        edge = width * dark
-        self.coords('tasks', edge, 0, width * light, height)
-        self.coords('projects', 0, 0, edge, height)
-
-    def transition_to(self, target):
-        if self.transition_id is not None:
-            self.after_cancel(self.transition_id)
-            self.transition_id = None
-        self.transition_start = self.display_fractions
-        self.transition_target = target
-        self.transition_time = time.monotonic()
-        self.transition_tick()
-
-    def transition_tick(self):
-        if self.transition_id is not None:
-            self.after_cancel(self.transition_id)
-            self.transition_id = None
-        elapsed = max(0, min(1, (time.monotonic() - self.transition_time) / 0.16))
-        ease = 1 - (1 - elapsed) ** 3
-        self.display_fractions = tuple(start + (end - start) * ease
-                                       for start, end in zip(self.transition_start, self.transition_target))
-        self.redraw()
-        if elapsed < 1 and self.transition_start != self.transition_target:
-            self.transition_id = self.after(16, self.transition_tick)
-
-    def animate(self):
-        self.pulse = (self.pulse + 0.04) % 1
-        dark, _ = self.fractions()
-        span = (0.3 - 0.15 * math.cos(self.pulse * math.tau)) / self.projects_total
-        self.transition_to((dark, min(1, dark + span)))
-        self.animation_id = self.after(60, self.animate)
-
-    def stop_animation(self):
-        if self.animation_id is not None:
-            self.after_cancel(self.animation_id)
-            self.animation_id = None
-        if self.transition_id is not None:
-            self.after_cancel(self.transition_id)
-            self.transition_id = None
-
-    def finish(self):
-        self.stop_animation()
-        self.task_fraction = 0
-        self.display_fractions = self.fractions()
-        self.redraw()
-
-    def destroy(self):
-        self.stop_animation()
-        super().destroy()
 
 
 class TransferMeter:
@@ -314,491 +179,504 @@ class Worker(threading.Thread):
             self.emit('finished', completed, failed, cancelled)
 
 
-class Window(TkinterDnD.Tk):
-    def __init__(self):
+_application = None
+
+
+def ensure_application():
+    global _application
+    _application = QApplication.instance()
+    if _application is None:
         if os.name == 'nt':
             import ctypes
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
+        _application = QApplication(sys.argv)
+    if not _application.property('wrapitup_theme'):
+        apply_theme(_application)
+        _application.setApplicationName(APP_NAME)
+        _application.setApplicationVersion(VERSION)
+        _application.setWindowIcon(QIcon(str(Path(__file__).parent / 'assets/Icon/app.ico')))
+        _application.setProperty('wrapitup_theme', True)
+    return _application
+
+
+class Window(QMainWindow):
+    def __init__(self):
+        ensure_application()
         super().__init__()
-        self.title(f'{APP_LABEL} · {APP_TAGLINE}')
-        icon_folder = Path(__file__).parent / 'assets' / 'Icon'
-        if os.name == 'nt':
-            self.iconbitmap(str(icon_folder / 'app.ico'))
-            self.iconbitmap(default=str(icon_folder / 'app.ico'))
-        else:
-            self.window_icon = tk.PhotoImage(master=self, file=str(icon_folder / 'nuke logo.png'))
-            self.iconphoto(True, self.window_icon)
-        self.geometry('1160x880')
-        self.minsize(780, 640)
-        self.paths = []
-        self.plans = {}
+        self.setWindowTitle(f'{APP_LABEL} · {APP_TAGLINE}')
+        self.setWindowIcon(QApplication.windowIcon())
+        self.resize(1240, 820)
+        self.setMinimumSize(900, 620)
+        self.setAcceptDrops(True)
+        self.paths, self.path_set = [], set()
+        self.plans, self.packaged_paths, self.project_errors, self.project_items = {}, {}, {}, {}
         self.session = ScanSession()
-        self.path_set = set()
-        self.packaged_paths = {}
-        self.project_errors = {}
-        self.asset_rows = {}
-        self.last_project_directory = None
         self.worker = None
         self.events = Queue()
+        self.last_project_directory = None
         self.closing = False
-        self.poll_id = None
-        self.output = tk.StringVar(self)
-        self.progress_text = tk.StringVar(self, value='就绪')
-        self.total_text = tk.StringVar(self, value='整体进度：尚未开始')
-        self.only_issues = tk.BooleanVar(self, value=False)
         self._build_widgets()
+        self._build_menus()
         self.show_item_status()
-        self.drop_target_register(DND_FILES)
-        self.dnd_bind('<<Drop>>', self.on_drop)
-        self.protocol('WM_DELETE_WINDOW', self.close)
-        self.poll_id = self.after(50, self.poll_events)
+        self.poll_timer = QTimer(self)
+        self.poll_timer.setInterval(30)
+        self.poll_timer.timeout.connect(self.poll_events)
+        self.poll_timer.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if os.name == 'nt':
+            import ctypes
+            try:
+                dark = ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(int(self.winId())),
+                                                         20, ctypes.byref(dark), ctypes.sizeof(dark))
+            except (AttributeError, OSError):
+                pass
+
+    def _button(self, text, icon, callback, tooltip='', compact=False):
+        button = QToolButton() if compact else QPushButton(text)
+        button.setIcon(tool_icon(icon, '#1b1b1b' if icon == 'pack' else '#c8c8c8'))
+        button.setIconSize(QSize(16, 16))
+        button.setToolTip(tooltip or text)
+        button.setAccessibleName(tooltip or text)
+        button.setMinimumHeight(28)
+        if compact: button.setFixedSize(28, 28)
+        button.clicked.connect(callback)
+        return button
 
     def _build_widgets(self):
-        style = ttk.Style(self)
-        if 'vista' in style.theme_names():
-            style.theme_use('vista')
-        style.configure('TButton', padding=(10, 6))
-        style.configure('Tool.TButton', padding=0, anchor='center')
-        style.configure('Treeview', rowheight=27)
-        scale = float(self.tk.call('tk', 'scaling')) / (96 / 72)
-        button_size, icon_size = round(32 * scale), round(20 * scale)
-        root = ttk.Frame(self, padding=16)
-        root.pack(fill='both', expand=True)
-        output_row = ttk.Frame(root)
-        output_row.pack(fill='x')
-        output_row.rowconfigure(0, minsize=button_size)
-        output_row.columnconfigure(1, weight=1)
-        output_row.columnconfigure(2, minsize=button_size + 8)
-        ttk.Label(output_row, text='输出目录', anchor='w').grid(row=0, column=0, sticky='nsw', padx=(0, 8))
-        self.output_entry = ttk.Entry(output_row, textvariable=self.output)
-        self.output_entry.grid(row=0, column=1, sticky='nsew')
-        self.choose = ttk.Button(output_row, text='...', width=0, style='Tool.TButton', command=self.choose_output)
-        self.choose.grid(row=0, column=2, sticky='nsew', padx=(8, 0))
-        for widget in (output_row, self.output_entry, self.choose):
-            widget.drop_target_register(DND_FILES)
-            widget.dnd_bind('<<Drop>>', self.on_output_drop)
-        self.toolbar = ttk.Frame(root)
-        self.toolbar.pack(fill='x', pady=(10, 6))
-        self.controls = []
-        self.tooltips = []
-        self.toolbar_images = []
+        central = QWidget()
+        central.setObjectName('central')
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(10, 0, 10, 8)
+        layout.setSpacing(8)
+        brand = QHBoxLayout()
+        brand.setContentsMargins(4, 10, 4, 2)
+        title = QLabel(APP_NAME)
+        title.setObjectName('brand')
+        brand.addWidget(title)
+        version = QLabel(f'v{VERSION}')
+        version.setObjectName('muted')
+        brand.addWidget(version)
+        brand.addStretch()
+        logo = QLabel()
+        logo.setPixmap(QPixmap(str(Path(__file__).parent / 'assets/Icon/wordmark_2x.png')).scaledToHeight(
+            25, Qt.TransformationMode.SmoothTransformation))
+        brand.addWidget(logo)
+        layout.addLayout(brand)
 
-        def tool_button(icon, command, side='left'):
-            # Pixel-sized slots keep every button square, regardless of image metrics.
-            slot = ttk.Frame(self.toolbar, width=button_size, height=button_size)
-            slot.pack(side=side, padx=(0, 4) if side == 'left' else 0)
-            slot.pack_propagate(False)
-            images = []
-            for suffix in ('', '_disabled'):
-                path = Path(__file__).parent / 'assets' / 'toolbar' / f'{icon}{suffix}.png'
-                bitmap = tk.PhotoImage(master=self, file=str(path))
-                if icon_size != 20:
-                    bitmap = bitmap.zoom(icon_size).subsample(20)
-                images.append(bitmap)
-            self.toolbar_images.extend(images)
-            button = ttk.Button(slot, image=(images[0], 'disabled', images[1]),
-                                command=command, style='Tool.TButton')
-            button.pack(fill='both', expand=True)
-            return button
+        output_bar = QFrame()
+        output_bar.setObjectName('output_bar')
+        output_row = QHBoxLayout(output_bar)
+        output_row.setContentsMargins(10, 7, 8, 7)
+        output_row.setSpacing(6)
+        output_row.addWidget(QLabel('输出目录'))
+        self.output_entry = DirectoryEdit(lambda: not self.busy())
+        self.output_entry.setPlaceholderText('选择交付位置，或将文件夹拖到这里')
+        self.output_entry.setAccessibleName('输出目录')
+        output_row.addWidget(self.output_entry, 1)
+        self.choose = self._button('选择输出目录', 'folder', self.choose_output, compact=True)
+        output_row.addWidget(self.choose)
+        output_row.addSpacing(8)
+        self.scan_button = self._button('扫描依赖', 'scan', self.scan_only, '扫描素材与插件 · Ctrl+R')
+        self.pack_button = self._button('开始打包', 'pack', self.pack, '打包列表中的全部工程 · Ctrl+Return')
+        self.pack_button.setObjectName('primary')
+        self.cancel = self._button('取消当前任务', 'stop', self.stop, compact=True)
+        self.cancel.setEnabled(False)
+        for button in (self.scan_button, self.pack_button, self.cancel): output_row.addWidget(button)
+        layout.addWidget(output_bar)
 
-        for index, (icon, label, command) in enumerate([
-            ('add', '添加工程 / 文件夹', self.choose_projects),
-            ('clear', '清空工程列表', self.clear),
-            ('scan', '扫描素材与插件', self.scan_only),
-            ('pack', '开始打包', self.pack),
-        ]):
-            if index in (2, 3):
-                ttk.Separator(self.toolbar, orient='vertical').pack(side='left', fill='y', padx=6, pady=5)
-            button = tool_button(icon, command)
-            self.controls.append(button)
-            self.tooltips.append(ToolTip(button, label))
-        self.add_project_button = self.controls[0]
-        self.cancel = tool_button('stop', self.stop, side='right')
-        self.cancel.state(['disabled'])
-        self.tooltips.append(ToolTip(self.cancel, '取消当前任务'))
-        ttk.Checkbutton(self.toolbar, text='只看 ×', variable=self.only_issues,
-                        command=self.render_selected_project).pack(side='right', padx=12)
-        logo_path = Path(__file__).parent / 'assets' / 'Icon' / ('wordmark_2x.png' if scale > 1 else 'wordmark.png')
-        self.brand_logo = tk.PhotoImage(master=self, file=str(logo_path))
-        logo_height = round(24 * scale)
-        if self.brand_logo.height() != logo_height:
-            divisor = math.gcd(logo_height, self.brand_logo.height())
-            self.brand_logo = self.brand_logo.zoom(logo_height // divisor).subsample(self.brand_logo.height() // divisor)
-        ttk.Label(self.toolbar, image=self.brand_logo).pack(side='right', padx=(12, 8))
-        self.panes = ttk.Panedwindow(root, orient='horizontal')
-        self.panes.pack(fill='both', expand=True)
-        projects = ttk.Frame(self.panes, width=330, padding=(0, 0, 10, 0))
-        details = ttk.Frame(self.panes, padding=(10, 0, 0, 0))
-        self.panes.add(projects, weight=1)
-        self.panes.add(details, weight=3)
-        project_frame = ttk.Frame(projects)
-        project_frame.pack(fill='both', expand=True)
-        project_frame.rowconfigure(0, weight=1)
-        project_frame.columnconfigure(0, weight=1)
-        self.project_table = ttk.Treeview(project_frame, columns=('name', 'status', 'assets'),
-                                          show='headings', selectmode='extended', height=6)
-        for column, heading, width in [('name', '工程', 175), ('status', '状态', 85), ('assets', '素材', 55)]:
-            self.project_table.heading(column, text=heading)
-            self.project_table.column(column, width=width, minwidth=45, stretch=column == 'name')
-        project_scroll = ttk.Scrollbar(project_frame, orient='vertical', command=self.project_table.yview)
-        project_horizontal = ttk.Scrollbar(project_frame, orient='horizontal', command=self.project_table.xview)
-        self.project_table.configure(yscrollcommand=project_scroll.set, xscrollcommand=project_horizontal.set)
-        self.project_table.grid(row=0, column=0, sticky='nsew')
-        project_scroll.grid(row=0, column=1, sticky='ns')
-        project_horizontal.grid(row=1, column=0, sticky='ew')
-        self.project_table.bind('<<TreeviewSelect>>', self.render_selected_project)
-        self.project_table.bind('<Delete>', self.remove_selected)
-        self.project_menu = tk.Menu(self, tearoff=False)
-        self.project_menu.add_command(label='移除选中工程  Delete', command=self.remove_selected)
-        self.project_menu.add_command(label='清空全部工程', command=self.clear)
-        self.project_table.bind('<Button-3>', self.show_project_menu)
-        table_frame = ttk.Frame(details)
-        table_frame.pack(fill='both', expand=True)
-        table_frame.rowconfigure(0, weight=1)
-        table_frame.columnconfigure(0, weight=1)
-        columns = ('node', 'type', 'path', 'files', 'status')
-        self.table = ttk.Treeview(table_frame, columns=columns, show='headings', height=4, selectmode='browse')
-        self.table.bind('<<TreeviewSelect>>', self.show_item_status)
-        self.table.bind('<Button-1>', self.clear_asset_selection_on_blank)
-        self.table.bind('<Control-c>', self.copy_asset_path)
-        self.asset_menu = tk.Menu(self, tearoff=False)
-        self.asset_menu.add_command(label='复制素材 / 插件路径  Ctrl+C', command=self.copy_asset_path)
-        self.table.bind('<Button-3>', self.show_asset_menu)
-        for column, heading, width in zip(
-            columns, ['节点', '类型', '原路径', '文件数', '状态'],
-            [120, 75, 390, 65, 65],
-        ):
-            self.table.heading(column, text=heading)
-            self.table.column(column, width=width, minwidth=55, stretch=column == 'path',
-                              anchor='center' if column in {'type', 'files', 'status'} else 'w')
-        vertical = ttk.Scrollbar(table_frame, orient='vertical', command=self.table.yview)
-        horizontal = ttk.Scrollbar(table_frame, orient='horizontal', command=self.table.xview)
-        self.table.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
-        self.table.grid(row=0, column=0, sticky='nsew')
-        vertical.grid(row=0, column=1, sticky='ns')
-        horizontal.grid(row=1, column=0, sticky='ew')
-        # Reserve the footer first, letting the split pane shrink on small windows.
-        footer = ttk.Frame(root)
-        footer.pack(side='bottom', fill='x', before=self.panes)
-        progress_header = ttk.Frame(footer)
-        progress_header.pack(fill='x', pady=(12, 0))
-        ttk.Label(progress_header, text='深色：工程数  ·  浅色：当前阶段任务',
-                  foreground='#245780').pack(side='right')
-        ttk.Label(progress_header, textvariable=self.total_text).pack(side='left', fill='x', expand=True)
-        self.progress = CombinedProgress(footer)
-        self.progress.pack(fill='x', pady=(4, 4))
-        ttk.Label(footer, textvariable=self.progress_text).pack(anchor='w')
-        self.footer_panes = ttk.Panedwindow(footer, orient='horizontal')
-        self.footer_panes.pack(fill='x', pady=(8, 0))
-        log_frame = ttk.Frame(self.footer_panes, padding=(0, 0, 8, 0))
-        status_frame = ttk.Frame(self.footer_panes, padding=(8, 0, 0, 0))
-        self.footer_panes.add(log_frame, weight=1)
-        self.footer_panes.add(status_frame, weight=1)
-        log_header = ttk.Frame(log_frame)
-        log_header.pack(fill='x', pady=(0, 4))
-        log_header.configure(height=round(24 * scale))
-        log_header.pack_propagate(False)
-        ttk.Label(log_header, text='日志').pack(side='left')
-        self.open_readme_button = ttk.Button(log_header, text='README', padding=(5, 0),
-                                             command=lambda: self.open_result(readme=True), state='disabled')
-        self.open_readme_button.pack(side='right')
-        self.open_output_button = ttk.Button(log_header, text='打开输出', padding=(5, 0),
-                                             command=self.open_result, state='disabled')
-        self.open_output_button.pack(side='right', padx=4)
-        self.tooltips.append(ToolTip(self.open_output_button, '打开所选工程上一次成功打包的目录'))
-        self.tooltips.append(ToolTip(self.open_readme_button, '查看所选工程上一次成功打包的 README'))
-        status_header = ttk.Frame(status_frame, height=round(24 * scale))
-        status_header.pack(fill='x', pady=(0, 4))
-        status_header.pack_propagate(False)
-        ttk.Label(status_header, text='素材 / 插件状态').pack(side='left')
-        self.log = ScrolledText(log_frame, width=1, height=5, wrap='word', state='disabled')
-        self.dependencies = ScrolledText(status_frame, width=1, height=5, wrap='word', state='disabled')
-        for view in (self.dependencies, self.log):
-            view.configure(font=('Microsoft YaHei UI', 10), padx=8, pady=6,
-                           spacing1=2, spacing3=4)
-            for level, color in [('info', '#334155'), ('success', '#16703c'),
-                                 ('warning', '#985c00'), ('error', '#b42318')]:
-                view.tag_configure(level, foreground=color)
-            view.pack(fill='both', expand=True)
+        self.vertical_panes = QSplitter(Qt.Orientation.Vertical)
+        self.vertical_panes.setChildrenCollapsible(False)
+        self.vertical_panes.setHandleWidth(5)
+        layout.addWidget(self.vertical_panes, 1)
+        self.panes = QSplitter(Qt.Orientation.Horizontal)
+        self.panes.setChildrenCollapsible(False)
+        self.panes.setHandleWidth(5)
+        self.vertical_panes.addWidget(self.panes)
+        projects = Panel('工程')
+        projects.setMinimumWidth(245)
+        self.project_count = QLabel('0 个')
+        self.project_count.setObjectName('muted')
+        projects.header.addWidget(self.project_count)
+        self.add_project_button = self._button('添加工程 / 文件夹', 'add', self.choose_projects, compact=True)
+        self.clear_button = self._button('清空工程列表', 'clear', self.clear, compact=True)
+        projects.header.addWidget(self.add_project_button)
+        projects.header.addWidget(self.clear_button)
+        self.project_table = FileTree(lambda: not self.busy(), '拖入 .nk 工程或文件夹', '也可以点击 + 批量添加')
+        self.project_table.setAccessibleName('工程列表')
+        self.project_table.setHeaderLabels(['工程名称', '状态', '素材'])
+        self.project_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.project_table.setColumnWidth(0, 190)
+        self.project_table.setColumnWidth(1, 105)
+        self.project_table.header().setStretchLastSection(False)
+        self.project_table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.project_table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.project_table.itemSelectionChanged.connect(self.render_selected_project)
+        self.project_table.filesDropped.connect(self.add)
+        self.project_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.project_table.customContextMenuRequested.connect(self.show_project_menu)
+        projects.body.addWidget(self.project_table)
+        self.panes.addWidget(projects)
+
+        details = Panel('素材与插件')
+        self.asset_count = QLabel('尚未扫描')
+        self.asset_count.setObjectName('muted')
+        details.header.addWidget(self.asset_count)
+        details.header.addSpacing(12)
+        self.only_issues = QCheckBox('只看 ×')
+        self.only_issues.setToolTip('仅显示缺失或需核对的依赖')
+        self.only_issues.toggled.connect(self.render_selected_project)
+        details.header.addWidget(self.only_issues)
+        self.table = FileTree(lambda: not self.busy(), '选择工程，扫描素材与插件', '检查素材、字体和 Gizmo 的收集状态')
+        self.table.setAccessibleName('依赖列表')
+        self.table.setHeaderLabels(['节点', '类型', '原路径 / 来源', '文件数', '状态'])
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.header().setStretchLastSection(False)
+        for column, width in enumerate((140, 58, 350, 62, 54)): self.table.setColumnWidth(column, width)
+        self.table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.itemSelectionChanged.connect(self.show_item_status)
+        self.table.filesDropped.connect(self.add)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_asset_menu)
+        details.body.addWidget(self.table)
+        self.panes.addWidget(details)
+        self.panes.setStretchFactor(0, 1)
+        self.panes.setStretchFactor(1, 3)
+
+        self.footer_panes = QSplitter(Qt.Orientation.Horizontal)
+        self.footer_panes.setHandleWidth(5)
+        self.footer_panes.setChildrenCollapsible(False)
+        log_panel, status_panel = Panel('日志'), Panel('属性')
+        self.open_output_button = QPushButton('打开输出')
+        self.open_readme_button = QPushButton('README')
+        self.open_output_button.clicked.connect(lambda: self.open_result())
+        self.open_readme_button.clicked.connect(lambda: self.open_result(readme=True))
+        for button in (self.open_output_button, self.open_readme_button):
+            button.setEnabled(False)
+            button.setFixedHeight(25)
+            log_panel.header.addWidget(button)
+        self.log, self.dependencies = QTextEdit(), QTextEdit()
+        for view in (self.log, self.dependencies):
+            view.setReadOnly(True)
+            view.setMinimumHeight(90)
+        self.log.document().setMaximumBlockCount(5000)
+        log_panel.body.addWidget(self.log)
+        status_panel.body.addWidget(self.dependencies)
+        self.footer_panes.addWidget(log_panel)
+        self.footer_panes.addWidget(status_panel)
+        self.vertical_panes.addWidget(self.footer_panes)
+        self.reset_layout()
+
+        progress_header = QHBoxLayout()
+        self.total_text = QLabel('整体进度：尚未开始')
+        progress_header.addWidget(self.total_text, 1)
+        legend = QLabel('深色：已处理工程   ·   浅色：当前任务')
+        legend.setObjectName('muted')
+        progress_header.addWidget(legend)
+        layout.addLayout(progress_header)
+        self.progress = CombinedProgress()
+        layout.addWidget(self.progress)
+        self.progress_text = QLabel('就绪')
+        self.progress_text.setMinimumWidth(0)
+        self.progress_text.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self.progress_text)
+        self.controls = [self.add_project_button, self.clear_button, self.scan_button, self.pack_button]
+
+    def _build_menus(self):
+        file_menu = self.menuBar().addMenu('文件(&F)')
+        self.edit_actions = []
+        for text, shortcut, handler in (('添加工程 / 文件夹…', 'Ctrl+O', self.choose_projects),
+                                        ('选择输出目录…', '', self.choose_output),
+                                        ('扫描依赖', 'Ctrl+R', self.scan_only),
+                                        ('开始打包', 'Ctrl+Return', self.pack)):
+            action = file_menu.addAction(text)
+            action.triggered.connect(handler)
+            if shortcut: action.setShortcut(QKeySequence(shortcut))
+            self.edit_actions.append(action)
+        file_menu.addSeparator()
+        file_menu.addAction('退出', self.close)
+        self.menuBar().addMenu('视图(&V)').addAction('重置面板布局', self.reset_layout)
+        self.menuBar().addMenu('帮助(&H)').addAction('关于', self.about)
+        for widget, shortcut, handler in ((self.project_table, 'Delete', self.remove_selected),
+                                           (self.table, 'Ctrl+C', self.copy_asset_path)):
+            action = QAction(widget)
+            action.setShortcut(QKeySequence(shortcut))
+            action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+            action.triggered.connect(handler)
+            widget.addAction(action)
+
+    def about(self):
+        QMessageBox.about(self, '关于', f'{APP_LABEL}\n\nNuke 工程批量交付工具\nQt6 / PySide6\n\n{APP_TAGLINE}')
+
+    def reset_layout(self):
+        self.panes.setSizes([340, 880])
+        self.footer_panes.setSizes([600, 600])
+        self.vertical_panes.setSizes([460, 190])
 
     def busy(self):
         return self.worker is not None
 
+    @staticmethod
+    def append_text(view, text, level='info'):
+        cursor = view.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        char_format = QTextCharFormat()
+        char_format.setForeground(QColor(COLORS.get(level, COLORS['info'])))
+        cursor.insertText(text + '\n', char_format)
+        view.setTextCursor(cursor)
+
+    def write_lines(self, view, lines):
+        view.clear()
+        for text, level in lines: self.append_text(view, text, level)
+        view.moveCursor(QTextCursor.MoveOperation.Start)
+
     def append_log(self, text, level='info'):
-        self.log.configure(state='normal')
-        self.log.insert('end', text + '\n', (level,))
-        self.log.see('end')
-        self.log.configure(state='disabled')
+        self.append_text(self.log, text, level)
+        self.log.ensureCursorVisible()
 
     def clear_log(self):
-        self.log.configure(state='normal')
-        self.log.delete('1.0', 'end')
-        self.log.configure(state='disabled')
+        self.log.clear()
 
     def add(self, paths):
-        if self.busy():
-            return
-        paths = list(paths)
-        if not paths: return
+        if self.busy() or not paths: return
         self.discovery_start_count = len(self.paths)
         self.set_busy_controls(True)
         self.progress.set_projects(0, 1)
         self.progress.set_tasks(0, 0)
-        self.progress_text.set('正在查找工程…')
-        self.worker = DiscoveryWorker(paths, self.events)
+        self.progress_text.setText('正在查找工程…')
+        self.worker = DiscoveryWorker(list(paths), self.events)
         self.worker.start()
 
     def discovered(self, paths):
-        for item in paths:
-            if item not in self.path_set:
-                self.path_set.add(item)
-                self.paths.append(item)
-                self.project_table.insert('', 'end', iid=str(item), values=(item.name, '未扫描', '—'))
-        if self.paths and not self.project_table.selection():
-            self.project_table.selection_set(str(self.paths[0]))
-            self.project_table.focus(str(self.paths[0]))
+        for path in paths:
+            if path in self.path_set: continue
+            self.path_set.add(path)
+            self.paths.append(path)
+            item = QTreeWidgetItem([path.name, '未扫描', '—'])
+            item.setData(0, Qt.ItemDataRole.UserRole, str(path))
+            item.setToolTip(0, str(path))
+            self.project_table.addTopLevelItem(item)
+            self.project_items[path] = item
+        if self.paths and not self.project_table.selectedItems():
+            self.project_table.setCurrentItem(self.project_items[self.paths[0]])
+        self.project_count.setText(f'{len(self.paths)} 个')
         if self.worker and not self.worker.cancelled.is_set():
-            self.progress_text.set(f'正在查找工程 · 新增 {len(self.paths) - self.discovery_start_count} 个')
+            self.progress_text.setText(f'正在查找工程 · 新增 {len(self.paths) - self.discovery_start_count} 个')
 
     def discovery_finished(self, found, cancelled):
         self.worker.join()
         self.worker = None
         self.set_busy_controls(False)
         self.progress.finish()
-        added = len(self.paths) - self.discovery_start_count
-        self.progress_text.set(f'{"已取消查找" if cancelled else "添加完成"} · 新增 {added} 个工程')
-        self.total_text.set('整体进度：尚未开始')
+        self.progress_text.setText(f'{"已取消查找" if cancelled else "添加完成"} · 新增 {len(self.paths) - self.discovery_start_count} 个工程')
+        self.total_text.setText('整体进度：尚未开始')
         self.render_selected_project()
 
     def set_busy_controls(self, busy):
-        for control in self.controls + [self.choose, self.output_entry]:
-            control.state(['disabled' if busy else '!disabled'])
-        self.cancel.state(['!disabled' if busy else 'disabled'])
+        for control in self.controls + [self.choose, self.output_entry]: control.setEnabled(not busy)
+        for action in getattr(self, 'edit_actions', []): action.setEnabled(not busy)
+        self.cancel.setEnabled(busy)
 
-    def on_drop(self, event):
-        if self.busy():
-            return REFUSE_DROP
-        self.add(self.tk.splitlist(event.data))
-        return COPY
+    def dragEnterEvent(self, event):
+        over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
+        if not self.busy() and not over_output and local_paths(event.mimeData()): event.acceptProposedAction()
+        else: event.ignore()
 
-    def on_output_drop(self, event):
-        if self.busy():
-            return REFUSE_DROP
-        try:
-            paths = self.tk.splitlist(event.data)
-            if len(paths) == 1 and Path(paths[0]).is_dir():
-                self.output.set(str(Path(paths[0]).resolve()))
-                return COPY
-        except (OSError, tk.TclError):
-            self.append_log('无法读取输出文件夹，请检查路径与权限。', 'error')
-            return REFUSE_DROP
-        self.append_log('请拖入一个文件夹作为输出目录。')
-        return REFUSE_DROP
+    def dropEvent(self, event):
+        paths = local_paths(event.mimeData())
+        over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
+        if paths and not self.busy() and not over_output:
+            self.add(paths)
+            event.acceptProposedAction()
+        else: event.ignore()
 
     def choose_projects(self):
-        if self.busy():
-            return
-        initialdir = self.last_project_directory or (self.paths[0].parent if self.paths else Path.home())
+        if self.busy(): return
+        initial = self.last_project_directory or (self.paths[0].parent if self.paths else Path.home())
         try:
-            selected = ask_projects(self, initialdir)
+            selected = ask_projects(self, initial)
         except (OSError, ValueError) as error:
-            messagebox.showerror('无法打开文件选择器', str(error), parent=self)
+            QMessageBox.critical(self, '无法打开文件选择器', str(error))
             return
         if selected:
             self.last_project_directory = Path(selected[0]).parent
             self.add(selected)
 
     def choose_output(self):
-        path = filedialog.askdirectory(parent=self, title='选择输出目录')
-        if path:
-            self.output.set(path)
+        if self.busy(): return
+        path = QFileDialog.getExistingDirectory(self, '选择输出目录', self.output_entry.text())
+        if path: self.output_entry.setText(path)
 
+    def selected_project_paths(self):
+        return [Path(item.data(0, Qt.ItemDataRole.UserRole)) for item in self.project_table.selectedItems()]
 
     def clear(self):
-        if self.busy():
-            return
-        self.paths.clear()
-        self.path_set.clear()
-        self.plans.clear()
+        if self.busy(): return
+        self.paths.clear(); self.path_set.clear(); self.plans.clear()
         self.session = ScanSession()
-        self.packaged_paths.clear()
-        self.project_errors.clear()
-        self.project_table.delete(*self.project_table.get_children())
+        self.packaged_paths.clear(); self.project_errors.clear(); self.project_items.clear()
+        self.project_table.clear()
+        self.project_count.setText('0 个')
         self.render_selected_project()
         self.clear_log()
 
-    def remove_selected(self, event=None):
-        if self.busy(): return 'break'
-        for row in self.project_table.selection():
-            path = Path(row)
+    def remove_selected(self):
+        if self.busy(): return
+        for path in self.selected_project_paths():
             self.path_set.discard(path)
-            self.plans.pop(path, None)
-            self.session.plans.pop(path, None)
-            self.project_errors.pop(path, None)
-            self.packaged_paths.pop(path, None)
-            self.project_table.delete(row)
+            for mapping in (self.plans, self.session.plans, self.project_errors, self.packaged_paths): mapping.pop(path, None)
+            item = self.project_items.pop(path)
+            self.project_table.takeTopLevelItem(self.project_table.indexOfTopLevelItem(item))
         self.paths = [p for p in self.paths if p in self.path_set]
-        if self.paths and not self.project_table.selection():
-            self.project_table.selection_set(str(self.paths[0]))
+        if self.paths and not self.project_table.selectedItems():
+            self.project_table.setCurrentItem(self.project_items[self.paths[0]])
+        self.project_count.setText(f'{len(self.paths)} 个')
         self.render_selected_project()
-        return 'break'
 
-    def show_project_menu(self, event):
-        row = self.project_table.identify_row(event.y)
-        if not row or self.busy(): return
-        if row not in self.project_table.selection(): self.project_table.selection_set(row)
-        self.project_menu.tk_popup(event.x_root, event.y_root)
+    def show_project_menu(self, point):
+        item = self.project_table.itemAt(point)
+        if not item or self.busy(): return
+        if not item.isSelected(): self.project_table.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction('移除选中工程  Delete', self.remove_selected)
+        menu.addAction('清空全部工程', self.clear)
+        menu.exec(self.project_table.viewport().mapToGlobal(point))
 
-    def show_asset_menu(self, event):
-        row = self.table.identify_row(event.y)
-        if not row: return
-        self.table.selection_set(row)
-        self.asset_menu.tk_popup(event.x_root, event.y_root)
+    def show_asset_menu(self, point):
+        item = self.table.itemAt(point)
+        if not item: return
+        self.table.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction('复制素材 / 插件路径  Ctrl+C', self.copy_asset_path)
+        menu.exec(self.table.viewport().mapToGlobal(point))
 
-    def copy_asset_path(self, event=None):
-        selected = self.table.selection()
-        asset = self.asset_rows.get(selected[0]) if selected else None
+    def copy_asset_path(self):
+        selected = self.table.selectedItems()
+        asset = selected[0].data(0, Qt.ItemDataRole.UserRole) if selected else None
         if asset:
             value = asset.source or ('\n'.join(asset.candidates) if isinstance(asset, Plugin) else asset.raw)
-            if value:
-                self.clipboard_clear()
-                self.clipboard_append(value)
-        return 'break'
+            if value: QApplication.clipboard().setText(value)
 
     def packaged(self, path, target):
         self.packaged_paths[path] = Path(target)
         self.update_result_buttons()
 
     def result_path(self):
-        selected = self.project_table.selection()
-        return self.packaged_paths.get(Path(selected[0])) if selected else None
+        selected = self.selected_project_paths()
+        return self.packaged_paths.get(selected[0]) if selected else None
 
     def update_result_buttons(self):
-        state = '!disabled' if self.result_path() else 'disabled'
-        for button in (self.open_output_button, self.open_readme_button): button.state([state])
+        for button in (self.open_output_button, self.open_readme_button): button.setEnabled(bool(self.result_path()))
 
     def open_result(self, readme=False):
         target = self.result_path()
-        if target:
-            try: os.startfile(str(target / 'readme.md' if readme else target))
-            except OSError as error: self.append_log(f'打开失败 · {readable_error(error)}', 'error')
+        if target and not QDesktopServices.openUrl(QUrl.fromLocalFile(str(target / 'readme.md' if readme else target))):
+            self.append_log('打开失败 · 无法打开所选交付结果，请检查路径与关联程序。', 'error')
 
     def scan_only(self):
         self.start(None)
 
     def pack(self):
-        output = self.output.get().strip()
+        output = self.output_entry.text().strip()
         if not output:
-            messagebox.showinfo('输出目录', '请先选择输出目录。', parent=self)
+            QMessageBox.information(self, '输出目录', '请先选择输出目录。')
             return
         self.start(output)
 
     def start(self, output):
-        if self.busy():
-            return
+        if self.busy(): return
         if not self.paths:
-            messagebox.showinfo('添加工程', '请先添加 .nk 工程。', parent=self)
+            QMessageBox.information(self, '添加工程', '请先添加 .nk 工程。')
             return
         self.clear_log()
-        action = '打包' if output else '扫描'
-        self.append_log(f'开始{action} · 共 {len(self.paths)} 个工程')
-        if not output:
-            self.session = ScanSession()
-        self.plans.clear()
-        self.project_errors.clear()
+        self.append_log(f'开始{"打包" if output else "扫描"} · 共 {len(self.paths)} 个工程')
+        if not output: self.session = ScanSession()
+        self.plans.clear(); self.project_errors.clear()
         for path in self.paths:
-            self.project_table.item(str(path), values=(path.name, '等待扫描', '—'))
+            self.project_items[path].setText(1, '等待扫描')
+            self.project_items[path].setText(2, '—')
         self.render_selected_project()
         self.progress.set_projects(0, len(self.paths))
-        self.total_text.set(f'整体进度：0/{len(self.paths)} 个工程')
+        self.total_text.setText(f'整体进度：0/{len(self.paths)} 个工程')
         self.progress.set_tasks(0, 0)
-        self.progress_text.set('正在扫描…')
+        self.progress_text.setText('正在扫描…')
         self.set_busy_controls(True)
         self.worker = Worker(self.paths.copy(), output, self.events, self.session)
         self.worker.start()
 
     def poll_events(self):
-        self.poll_id = None
-        handlers = {
-            'message': self.append_log, 'scanned': self.show_plan,
-            'progress': self.show_progress, 'finished': self.finished,
-            'project': self.show_project, 'project_done': self.project_done,
-            'project_state': self.set_project_state,
-            'discovered': self.discovered, 'discovery_finished': self.discovery_finished,
-            'packaged': self.packaged,
-        }
-        # Bound batches so large queues do not starve redraws or cancellation.
+        handlers = {'message': self.append_log, 'scanned': self.show_plan, 'progress': self.show_progress,
+                    'finished': self.finished, 'project': self.show_project, 'project_done': self.project_done,
+                    'project_state': self.set_project_state, 'discovered': self.discovered,
+                    'discovery_finished': self.discovery_finished, 'packaged': self.packaged}
         deadline = time.monotonic() + 0.012
         for _ in range(200):
-            try:
-                kind, values = self.events.get_nowait()
-            except Empty:
-                break
-            try:
-                handlers[kind](*values)
-            except Exception as error:
-                self.append_log(f'界面更新失败：{error}')
+            try: kind, values = self.events.get_nowait()
+            except Empty: break
+            try: handlers[kind](*values)
+            except Exception as error: self.append_log(f'界面更新失败：{error}', 'error')
             if kind in {'finished', 'discovery_finished'}:
-                if self.closing:
-                    self.destroy()
-                    return
+                if self.closing: self.close()
                 break
             if time.monotonic() >= deadline: break
-        self.poll_id = self.after(50, self.poll_events)
 
     def show_plan(self, plan, size):
         self.plans[plan.script] = (plan, size)
-        self.project_table.set(str(plan.script), 'assets', len(plan.assets))
+        self.project_items[plan.script].setText(2, str(len(plan.assets)))
         self.set_project_state(plan.script, '需核对' if needs_review(plan) else '已扫描')
-        if self.project_table.selection()[:1] == (str(plan.script),):
-            self.render_selected_project()
+        if self.selected_project_paths()[:1] == [plan.script]: self.render_selected_project()
 
     def set_project_state(self, path, status, error=''):
-        self.project_table.set(str(path), 'status', status)
-        if error:
-            self.project_errors[path] = error
-        if self.project_table.selection()[:1] == (str(path),):
-            self.show_item_status()
+        item = self.project_items[path]
+        item.setText(1, status)
+        level = 'error' if error else ('warning' if '核对' in status or '取消' in status else
+                                      'success' if status in {'已扫描', '已打包'} else 'info')
+        item.setForeground(1, QColor(COLORS[level]))
+        if error: self.project_errors[path] = error
+        if self.selected_project_paths()[:1] == [path]: self.show_item_status()
 
-    def render_selected_project(self, event=None):
+    def render_selected_project(self, *args):
         self.update_result_buttons()
-        self.table.delete(*self.table.get_children())
-        self.asset_rows.clear()
-        selection = self.project_table.selection()
-        if selection:
-            cached = self.plans.get(Path(selection[0]))
-            if cached:
-                plan, _ = cached
-                for asset in plan.assets:
-                    if self.only_issues.get() and asset.status == '就绪': continue
-                    row = self.table.insert('', 'end', values=(
-                        asset.node, '字体' if asset.kind == 'font' else '素材', asset.raw, len(asset.files), '√' if asset.status == '就绪' else '×',
-                    ))
-                    self.asset_rows[row] = asset
-                for plugin in plan.plugins:
-                    if self.only_issues.get() and plugin.status in {'就绪', '外部依赖'}: continue
-                    row = self.table.insert('', 'end', values=(
-                        plugin.name, '插件', plugin.source or '；'.join(plugin.candidates),
-                        1 if plugin.source else 0, '√' if plugin.status == '就绪' else ('—' if plugin.status == '外部依赖' else '×'),
-                    ))
-                    self.asset_rows[row] = plugin
+        self.table.blockSignals(True)
+        self.table.setUpdatesEnabled(False)
+        self.table.clear()
+        selected = self.selected_project_paths()
+        cached = self.plans.get(selected[0]) if selected else None
+        if cached:
+            plan, _ = cached
+            for asset in [*plan.assets, *plan.plugins]:
+                plugin = isinstance(asset, Plugin)
+                ready = asset.status == '就绪'
+                external = plugin and asset.status == '外部依赖'
+                if self.only_issues.isChecked() and (ready or external): continue
+                values = ([asset.name, '插件', asset.source or '；'.join(asset.candidates), '1' if asset.source else '0'] if plugin
+                          else [asset.node, '字体' if asset.kind == 'font' else '素材', asset.raw, str(len(asset.files))])
+                item = QTreeWidgetItem(values + ['√' if ready else '—' if external else '×'])
+                item.setData(0, Qt.ItemDataRole.UserRole, asset)
+                for column in (1, 3, 4): item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
+                item.setForeground(4, QColor(COLORS['success' if ready else 'info' if external else 'warning']))
+                item.setToolTip(2, values[2])
+                self.table.addTopLevelItem(item)
+            self.asset_count.setText(f'{len(plan.assets)} 项素材 / 字体   ·   {len(plan.plugins)} 项插件')
+        else: self.asset_count.setText('尚未扫描')
+        self.table.setUpdatesEnabled(True)
+        self.table.blockSignals(False)
         self.show_item_status()
 
-    def clear_asset_selection_on_blank(self, event):
-        if not self.table.identify_row(event.y):
-            self.table.selection_remove(*self.table.selection())
-
     def show_item_status(self, event=None):
-        selection = self.project_table.selection()
+        selection = self.selected_project_paths()
         if not selection:
             lines = [('请选择左侧工程。', 'info'), ('点击素材，可查看详细状态。', 'info')]
         else:
             path = Path(selection[0])
-            status = self.project_table.set(selection[0], 'status')
+            status = self.project_items[path].text(1)
             error = self.project_errors.get(path, '')
             cached = self.plans.get(path)
-            selected_assets = self.table.selection()
-            asset = self.asset_rows.get(selected_assets[0]) if selected_assets else None
+            selected_assets = self.table.selectedItems()
+            asset = selected_assets[0].data(0, Qt.ItemDataRole.UserRole) if selected_assets else None
             if isinstance(asset, Plugin):
                 level = 'success' if asset.status == '就绪' else 'warning'
                 lines = [(f'插件状态：{asset.status} · {asset.name}', level),
@@ -862,76 +740,62 @@ class Window(TkinterDnD.Tk):
                 lines.append((f'已自动搜索 {len(plan.search_paths)} 个插件目录', 'info'))
                 lines.extend((warning, 'warning') for warning in plan.warnings)
                 lines.append((f'工程：{path}', 'info'))
-        self.dependencies.configure(state='normal')
-        self.dependencies.delete('1.0', 'end')
-        for text, level in lines:
-            self.dependencies.insert('end', text + '\n', (level,))
-        self.dependencies.yview_moveto(0)
-        self.dependencies.configure(state='disabled')
+        self.write_lines(self.dependencies, lines)
 
     def show_project(self, index, total, name):
         self.progress.set_projects(index - 1, total)
         self.progress.set_tasks(0, 0)
-        self.total_text.set(f'已处理 {index - 1}/{total} 个工程 · 当前 {index}/{total} · {name}')
+        self.total_text.setText(f'已处理 {index - 1}/{total} 个工程 · 当前 {index}/{total} · {name}')
 
     def project_done(self, done, total):
         self.progress.set_projects(done, total)
 
     def show_progress(self, phase, done, total, detail):
-        if self.worker and self.worker.cancelled.is_set():
-            return
+        if self.worker and self.worker.cancelled.is_set(): return
         self.progress.set_tasks(done, total)
-        if total:
-            percent = min(100, done / total * 100)
-            amount = f'任务 {int(done)}/{total}'
-            self.progress_text.set(f'{phase} · {percent:.1f}% · {amount} · {detail}')
-        else:
-            self.progress_text.set(f'{phase} · 正在统计或处理任务 · {detail}')
+        amount = f'{min(100, done / total * 100):.1f}% · 任务 {int(done)}/{total}' if total else '正在统计或处理任务'
+        self.progress_text.setText(f'{phase} · {amount} · {detail}')
+        self.progress_text.setToolTip(self.progress_text.text())
 
     def stop(self):
         if self.worker:
             self.worker.cancelled.set()
-            self.cancel.state(['disabled'])
-            self.progress_text.set('正在取消查找…' if isinstance(self.worker, DiscoveryWorker) else '正在取消并清理…')
+            self.cancel.setEnabled(False)
+            self.progress_text.setText('正在取消查找…' if isinstance(self.worker, DiscoveryWorker) else '正在取消并清理…')
 
     def finished(self, completed, failed, cancelled):
         self.worker.join()
         self.worker = None
         for path in self.paths:
-            if self.project_table.set(str(path), 'status') == '等待扫描':
-                self.set_project_state(path, '未扫描')
+            if self.project_items[path].text(1) == '等待扫描': self.set_project_state(path, '未扫描')
         self.set_busy_controls(False)
         self.progress.set_projects(completed + failed, len(self.paths))
         self.progress.finish()
-        outcome = '已取消' if cancelled else ('结束，存在失败' if failed else '任务完成')
-        self.progress_text.set(outcome)
-        self.total_text.set(f'{outcome} · 成功 {completed} · 失败 {failed} · 共 {len(self.paths)} 个工程')
+        outcome = '已取消' if cancelled else '结束，存在失败' if failed else '任务完成'
+        self.progress_text.setText(outcome)
+        self.total_text.setText(f'{outcome} · 成功 {completed} · 失败 {failed} · 共 {len(self.paths)} 个工程')
         review_count = sum(needs_review(plan) for plan, _ in self.plans.values())
         summary = f'{"已取消" if cancelled else "本轮结束"} · 完成 {completed} 个工程'
-        if failed:
-            summary += f'，失败 {failed} 个'
-        if cancelled:
-            summary += f'，未完成 {len(self.paths) - completed - failed} 个'
-        if review_count:
-            summary += f'，{review_count} 个需核对'
-        if failed or review_count:
-            summary += '（见右侧状态）'
-        self.append_log(summary, 'error' if failed else ('warning' if cancelled or review_count else 'success'))
+        if failed: summary += f'，失败 {failed} 个'
+        if cancelled: summary += f'，未完成 {len(self.paths) - completed - failed} 个'
+        if review_count: summary += f'，{review_count} 个需核对'
+        if failed or review_count: summary += '（见右侧属性）'
+        self.append_log(summary, 'error' if failed else 'warning' if cancelled or review_count else 'success')
 
-    def close(self):
+    def closeEvent(self, event):
         if self.busy():
             self.closing = True
             self.stop()
             self.append_log('正在取消，清理完成后自动关闭。')
+            event.ignore()
         else:
-            self.destroy()
-
-    def destroy(self):
-        if self.poll_id is not None:
-            self.after_cancel(self.poll_id)
-            self.poll_id = None
-        super().destroy()
+            self.poll_timer.stop()
+            self.progress.stop_animation()
+            event.accept()
 
 
 if __name__ == '__main__':
-    Window().mainloop()
+    application = ensure_application()
+    window = Window()
+    window.show()
+    sys.exit(application.exec())

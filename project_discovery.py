@@ -1,4 +1,4 @@
-"""Cancellable directory discovery. No Tk calls are made from this worker."""
+"""Cancellable directory discovery. No GUI calls are made from this worker."""
 import os
 from pathlib import Path
 import threading

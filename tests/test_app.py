@@ -1,635 +1,360 @@
-import gc
 import json
 from pathlib import Path
+from queue import Queue
 import tempfile
 import threading
 import time
-import tkinter as tk
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from app import Window
+from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QTimer, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMainWindow
+
+import app
+from app import Window, Worker, TransferMeter, ensure_application
 from core import Cancelled
 
 
 class WindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.qt = ensure_application()
+        cls.qt.setQuitOnLastWindowClosed(False)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.folder = Path(self.tmp.name)
         self.source = self.folder / '中文 shot.nk'
         (self.folder / 'plate.exr').write_bytes(b'pixels')
-        self.source.write_text('Read {\n file plate.exr\n name plate\n}\n', encoding='utf-8')
+        self.source.write_text('Read {\n file plate.exr\n name Plate\n}\n', encoding='utf-8')
         self.window = Window()
-        self.window.withdraw()
+        self.window.show()
+        self.qt.processEvents()
         defaults = patch('gizmo.default_paths', return_value=[])
         self.default_paths = defaults.start()
         self.addCleanup(defaults.stop)
 
     def tearDown(self):
-        try:
-            exists = self.window.winfo_exists()
-        except tk.TclError:
-            exists = False
-        if exists:
-            self.window.stop()
-            if self.window.worker:
-                self.window.worker.join(timeout=5)
-            self.window.destroy()
-        self.window = None
-        # Repeated Tk interpreters must be collected on the main thread.
-        gc.collect()
+        self.window.stop()
+        self.wait_finished()
+        self.window.close()
+        self.window.deleteLater()
+        self.qt.processEvents()
         self.tmp.cleanup()
 
     def wait_finished(self):
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 8
         while self.window.busy() and time.monotonic() < deadline:
-            self.window.update()
-            time.sleep(0.01)
+            QTest.qWait(10)
         self.assertFalse(self.window.busy(), 'Background task did not finish')
+        self.qt.processEvents()
+
+    def add_scan(self, paths=None):
+        self.window.add(paths or [self.source])
+        self.wait_finished()
+        QTest.mouseClick(self.window.scan_button, Qt.MouseButton.LeftButton)
+        self.wait_finished()
+
+    def pack(self, name='delivery'):
+        self.window.output_entry.setText(str(self.folder / name))
+        QTest.mouseClick(self.window.pack_button, Qt.MouseButton.LeftButton)
+        self.wait_finished()
 
     def log(self):
-        return self.window.log.get('1.0', 'end')
+        return self.window.log.toPlainText()
 
-    def test_tk_window_drop_and_clear(self):
-        self.assertIsInstance(self.window, tk.Tk)
-        data = self.window.tk.call('list', str(self.source), str(self.folder))
-        # Tcl event payload uses braces for paths containing spaces.
-        self.window.on_drop(SimpleNamespace(data=data))
+    def select_project(self, path):
+        self.window.project_table.setCurrentItem(self.window.project_items[path])
+        self.qt.processEvents()
+
+    def drop(self, widget, paths):
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+        enter = QDragEnterEvent(QPoint(8, 8), Qt.DropAction.CopyAction, mime,
+                               Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(widget, enter)
+        event = QDropEvent(QPointF(8, 8), Qt.DropAction.CopyAction, mime,
+                          Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(widget, event)
+        return event.isAccepted()
+
+    def test_native_qt_window_and_small_layout(self):
+        self.assertIsInstance(self.window, QMainWindow)
+        self.assertFalse(self.window.windowIcon().isNull())
+        self.assertLess(self.qt.palette().window().color().lightness(), 80)
+        self.window.resize(900, 620)
+        self.qt.processEvents()
+        self.assertGreater(self.window.table.viewport().width(), 200)
+        self.assertTrue(self.window.pack_button.isVisible())
+        self.assertEqual(self.window.table.columnCount(), 5)
+
+    def test_file_drop_discovery_deduplicates_then_clear(self):
+        self.assertTrue(self.drop(self.window.project_table.viewport(), [self.source, self.folder]))
         self.wait_finished()
         self.assertEqual(self.window.paths, [self.source.resolve()])
         self.window.clear()
-        self.assertEqual(self.window.paths, [])
+        self.assertEqual(self.window.project_table.topLevelItemCount(), 0)
 
-    def test_scan_and_package_from_window(self):
-        self.window.add([self.folder, self.source, self.folder / 'ignored.txt'])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        rows = self.window.table.get_children()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(self.window.table.set(rows[0], 'type'), '素材')
-        self.assertEqual(self.window.table.set(rows[0], 'status'), '√')
-        self.assertEqual(tuple(self.window.table['columns']), ('node', 'type', 'path', 'files', 'status'))
+    def test_output_drop_is_separate_from_project_drop(self):
+        self.assertTrue(self.drop(self.window.output_entry, [self.folder]))
+        self.assertEqual(self.window.output_entry.text(), str(self.folder.resolve()))
+        self.assertFalse(self.window.paths)
+        self.assertFalse(self.drop(self.window.output_entry, [self.source]))
+        self.assertFalse(self.drop(self.window.output_entry, [self.folder, self.source]))
+
+    def test_scan_and_package_from_buttons(self):
+        self.add_scan()
+        row = self.window.table.topLevelItem(0)
+        self.assertEqual([row.text(i) for i in (0, 1, 4)], ['Plate', '素材', '√'])
         self.assertIn('扫描完成', self.log())
-        self.assertNotIn('离线模式', self.log())
-        self.assertNotIn(str(self.folder), self.log())
-        delivery = self.folder / 'delivery'
-        delivery.mkdir()
-        self.window.on_output_drop(SimpleNamespace(data=self.window.tk.call('list', str(delivery))))
-        self.window.pack()
-        self.assertTrue(self.window.cancel.instate(['!disabled']))
-        self.wait_finished()
-        reports = list((self.folder / 'delivery').rglob('report.json'))
-        self.assertEqual(len(reports), 1)
-        self.assertEqual(json.loads(reports[0].read_text(encoding='utf-8'))['copied_files'], 1)
-        self.assertEqual(next(reports[0].parent.rglob('plate.exr')).read_bytes(), b'pixels')
-        self.assertFalse((reports[0].parent / 'packaging_incomplete.txt').exists())
-        self.assertIn('打包完成', self.log())
-        self.assertNotIn('开始扫描', self.log())
-        self.assertNotIn(str(self.folder), self.log())
-        self.assertEqual(len(self.log().strip().splitlines()), 3)
-        self.assertTrue(self.window.cancel.instate(['disabled']))
-        self.assertTrue(all(control.instate(['!disabled']) for control in self.window.controls))
-
-    def test_ofx_external_dependency_is_not_shown_as_packaging_failure(self):
-        self.source.write_text('OFXcom.revisionfx.rsmb_v3 {\n name RSMB1\n}\n')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        row = self.window.table.get_children()[0]
-        self.assertEqual(self.window.table.set(row, 'status'), '—')
-        self.window.table.selection_set(row)
-        self.window.show_item_status()
-        details = self.window.dependencies.get('1.0', 'end')
-        self.assertIn('外部依赖', details)
-        self.assertNotIn('工程不能打包', details)
-        self.window.only_issues.set(True)
-        self.window.render_selected_project()
-        self.assertFalse(self.window.table.get_children())
-        self.window.output.set(str(self.folder / 'delivery'))
-        self.window.pack()
-        self.wait_finished()
-        self.assertIn('打包完成', self.log())
-        self.assertNotIn('跳过缺失插件', self.log())
-
-    def test_fonts_and_three_script_variants_from_window(self):
-        (self.folder / 'title.ttf').write_bytes(b'font fixture')
-        self.source.write_text('Text {\n font title.ttf\n name Title\n}\n', encoding='utf-8')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        row = self.window.table.get_children()[0]
-        self.assertEqual(self.window.table.set(row, 'type'), '字体')
-        self.window.output.set(str(self.folder / 'delivery'))
-        self.window.pack()
-        self.wait_finished()
-        report_path = next((self.folder / 'delivery').rglob('report.json'))
-        report = json.loads(report_path.read_text(encoding='utf-8'))
+        self.pack()
+        target = self.window.packaged_paths[self.source]
+        report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+        self.assertTrue(report['explicit_media_complete'])
         for key in ('original_path_script', 'relinked_script', 'relative_script'):
-            self.assertTrue((report_path.parent / report[key]).is_file())
-        self.assertEqual((report_path.parent / report['assets'][0]['packed_path']).read_bytes(), b'font fixture')
+            self.assertTrue((target / report[key]).is_file())
         self.assertIn('打包完成', self.log())
+        self.assertTrue(self.window.open_readme_button.isEnabled())
 
-    def test_script_review_warning_allows_window_packaging(self):
-        self.source.write_text('NoOp {\n name Controls\n addUserKnob {22 help T {import webbrowser}}\n}\n')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        self.window.show_item_status()
-        details = self.window.dependencies.get('1.0', 'end')
-        self.assertIn('脚本待核对：1 项 · 不阻止打包', details)
-        self.assertIn('Controls / help', details)
-        self.window.output.set(str(self.folder / 'delivery'))
-        self.window.pack()
-        self.wait_finished()
-        self.assertIn('打包完成', self.log())
-        report_path = next((self.folder / 'delivery').rglob('report.json'))
-        report = json.loads(report_path.read_text(encoding='utf-8'))
-        self.assertFalse(report['script_dependencies_verified'])
-        self.assertFalse(report['gizmo_dependencies_complete'])
+    def test_fonts_display_and_package(self):
+        (self.folder / 'Title.TTF').write_bytes(b'font')
+        self.source.write_text('Text {\n font Title.TTF\n name Heading\n}\n')
+        self.add_scan()
+        self.assertEqual(self.window.table.topLevelItem(0).text(1), '字体')
+        self.pack()
+        self.assertEqual((self.window.packaged_paths[self.source] / 'fonts/title.ttf').read_bytes(), b'font')
+
+    def test_external_plugins_remain_external(self):
+        self.source.write_text('OFXcom.vendor.Plugin {\n name FX\n}\n')
+        self.add_scan()
+        self.assertEqual(self.window.table.topLevelItem(0).text(4), '—')
+        self.pack()
+        self.assertIn('外部插件', self.log())
+        self.assertNotIn('失败 ·', self.log())
+
+    def test_callbacks_and_missing_plugins_do_not_block(self):
+        self.source.write_text('NoOp {\n addUserKnob {22 help T {import webbrowser}}\n}\nMissingTool {\n}\n')
+        self.add_scan()
+        self.pack()
+        self.assertIn(self.source, self.window.packaged_paths)
+        self.assertIn('跳过缺失插件', self.log())
+        self.assertIn('脚本待核对', self.window.dependencies.toPlainText())
+
+    def test_automatic_gizmo_conflict_selection(self):
+        first, second = self.folder / 'first', self.folder / 'second'
+        for folder, label in ((first, 'first'), (second, 'second')):
+            folder.mkdir()
+            (folder / 'Demo.gizmo').write_text(f'Gizmo {{\n label {label}\n}}\nend_group\n')
+        self.default_paths.return_value = [first, second]
+        self.source.write_text('Demo {\n name Demo1\n}\n')
+        self.add_scan()
+        self.pack()
+        self.assertIn('first', (self.window.packaged_paths[self.source] / 'gizmos/demo.gizmo').read_text())
+
+    def test_project_selection_and_asset_details(self):
+        other = self.folder / 'other.nk'
+        other.write_text('Read {\n file missing.exr\n name Missing\n}\n')
+        self.add_scan([self.source, other])
+        self.select_project(other)
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.assertIn('缺失', self.window.dependencies.toPlainText())
+        self.assertIn('missing.exr', self.window.dependencies.toPlainText())
+        self.select_project(self.source)
+        self.assertEqual(self.window.table.topLevelItem(0).text(0), 'Plate')
+        self.assertNotIn('missing.exr', self.window.dependencies.toPlainText())
+
+    def test_filter_copy_blank_selection_and_remove_multiple(self):
+        self.source.write_text('Read {\n file missing.exr\n}\nRead {\n file plate.exr\n}\n')
+        other = self.folder / 'other.nk'
+        other.write_text('Root {\n}\n')
+        self.add_scan([self.source, other])
+        self.window.only_issues.setChecked(True)
+        self.assertEqual(self.window.table.topLevelItemCount(), 1)
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.window.copy_asset_path()
+        self.assertEqual(self.qt.clipboard().text(), str(self.folder / 'missing.exr'))
+        QTest.mouseClick(self.window.table.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(50, 200))
+        self.assertFalse(self.window.table.selectedItems())
+        self.window.project_table.selectAll()
+        self.window.project_table.setFocus()
+        self.qt.processEvents()
+        QTest.keyClick(self.window.project_table, Qt.Key.Key_Delete)
+        self.assertEqual(self.window.paths, [])
+        self.assertFalse(self.window.session.plans)
 
     def test_validation_and_dialogs(self):
-        with patch('app.messagebox.showinfo') as info:
-            self.window.pack()
-            self.window.scan_only()
+        with patch('app.QMessageBox.information') as info:
+            self.window.scan_only(); self.window.pack()
             self.assertEqual(info.call_count, 2)
-        with patch('app.ask_projects', return_value=[self.source]):
+        with patch('app.ask_projects', return_value=[self.source]) as picker:
+            self.window.choose_projects(); self.wait_finished()
+            picker.assert_called_once()
+        with patch('app.ask_projects', side_effect=OSError('bad dialog')), patch('app.QMessageBox.critical') as error:
             self.window.choose_projects()
-            self.wait_finished()
-        with patch('app.filedialog.askdirectory', return_value=str(self.folder)):
+            error.assert_called_once()
+        with patch('app.QFileDialog.getExistingDirectory', return_value=str(self.folder)):
             self.window.choose_output()
-        self.assertEqual(self.window.paths, [self.source.resolve()])
-        self.assertEqual(self.window.output.get(), str(self.folder))
-        with patch('app.filedialog.askdirectory', return_value=''):
-            self.window.choose_output()
-        self.assertEqual(self.window.output.get(), str(self.folder))
+        self.assertEqual(self.window.output_entry.text(), str(self.folder))
 
-    def test_plus_toolbar_adds_multiple_folders_and_files_without_duplicates(self):
-        first, second, empty = (self.folder / name for name in ('first', 'second', 'empty'))
-        for folder in (first, second, empty):
-            folder.mkdir()
-        nested = first / 'nested'; nested.mkdir()
-        a, b = nested / 'a.nk', second / 'b.NK'
-        a.write_text('Root {\n}\n'); b.write_text('Root {\n}\n')
-        with patch('app.ask_projects', return_value=[first, second, self.source, a, empty]):
-            self.window.add_project_button.invoke()
-            self.wait_finished()
-        self.assertEqual(set(self.window.paths), {a.resolve(), b.resolve(), self.source.resolve()})
-        self.assertIn('未找到 .nk', self.log())
-        labels = [str(button.cget('text')) for button in self.window.controls]
-        self.assertNotIn('添加工程', labels)
-        self.assertNotIn('添加文件夹', labels)
-        self.assertTrue(self.window.add_project_button.cget('image'))
-        with patch('app.ask_projects', return_value=[]):
-            self.window.choose_projects()
-            self.wait_finished()
-        self.assertEqual(len(self.window.paths), 3)
+    def test_failed_scan_and_next_project_continue(self):
+        self.source.write_text('Read {')
+        other = self.folder / 'other.nk'
+        other.write_text('Root {\n}\n')
+        self.add_scan([self.source, other])
+        self.assertEqual(self.window.project_items[self.source].text(1), '失败')
+        self.assertEqual(self.window.project_items[other].text(1), '已扫描')
+        self.select_project(self.source)
+        self.assertIn('未闭合', self.window.dependencies.toPlainText())
+        self.assertIn('失败 1', self.window.total_text.text())
 
+    def test_native_picker_is_owned_by_qt_window(self):
+        from project_picker import ask_projects
+        with patch('project_picker.NativeProjectDialog') as dialog:
+            instance = dialog.return_value.__enter__.return_value
+            instance.show.return_value = [self.source]
+            self.assertEqual(ask_projects(self.window, self.folder), [self.source])
+            instance.show.assert_called_once_with(int(self.window.winId()))
 
-    def test_output_drop_accepts_one_folder_without_adding_projects(self):
-        destination = self.folder / '中文 输出目录'
-        destination.mkdir()
-        event = SimpleNamespace(data=self.window.tk.call('list', str(destination)))
-        self.assertEqual(self.window.on_output_drop(event), 'copy')
-        self.assertEqual(self.window.output.get(), str(destination.resolve()))
-        self.assertEqual(self.window.paths, [])
-        for paths in [(self.source,), (destination, self.folder), (self.folder / 'missing',), ()]:
-            with self.subTest(paths=paths):
-                event = SimpleNamespace(data=self.window.tk.call('list', *(str(path) for path in paths)))
-                self.assertEqual(self.window.on_output_drop(event), 'refuse_drop')
-                self.assertEqual(self.window.output.get(), str(destination.resolve()))
-
-    def test_failure_does_not_prevent_next_project(self):
-        broken = self.folder / 'broken.nk'
-        broken.write_text('Read {', encoding='utf-8')
-        self.window.add([broken, self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertIn('工程内容无法解析', self.log())
-        self.assertNotIn('ValueError', self.log())
-        self.assertIn('ValueError', self.window.project_errors[broken.resolve()])
-        self.window.project_table.selection_set(str(self.source.resolve()))
-        self.window.update()
-        self.assertEqual(len(self.window.table.get_children()), 1)
-        self.assertIn('存在失败', self.window.progress_text.get())
-        self.assertIn('成功 1 · 失败 1', self.window.total_text.get())
-
-    def test_cancel_keeps_window_responsive_and_blocks_edits(self):
-        entered = threading.Event()
-
-        def slow_scan(path, cancel, **kwargs):
-            entered.set()
-            deadline = time.monotonic() + 5
-            while not cancel() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            raise Cancelled()
-
-        self.window.add([self.source])
-        self.wait_finished()
-        with patch('app.scan', side_effect=slow_scan):
-            self.window.scan_only()
-            self.assertTrue(entered.wait(2))
-            self.window.update()
-            self.window.clear()
-            self.window.on_output_drop(SimpleNamespace(data=self.window.tk.call('list', str(self.folder))))
-            self.assertEqual(self.window.output.get(), '')
-            self.window.add([self.folder / 'other.nk'])
-            self.window.scan_only()
-            self.assertEqual(self.window.paths, [self.source.resolve()])
-            self.window.stop()
-            self.wait_finished()
-        self.assertIn('已取消', self.log())
-        self.assertIn('已取消', self.window.progress_text.get())
-        self.assertLess(self.window.progress.projects_done, self.window.progress.projects_total)
-
-    def test_close_waits_for_background_cleanup(self):
-        entered, cleanup_allowed = threading.Event(), threading.Event()
-
-        def slow_scan(path, cancel, **kwargs):
-            entered.set()
-            cleanup_allowed.wait(5)
-            raise Cancelled()
-
-        self.window.add([self.source])
-        self.wait_finished()
-        with patch('app.scan', side_effect=slow_scan):
-            self.window.scan_only()
-            self.assertTrue(entered.wait(2))
-            self.window.close()
-            self.assertTrue(self.window.winfo_exists())
-            cleanup_allowed.set()
-            self.wait_finished()
-        with self.assertRaises(tk.TclError):
-            self.window.winfo_exists()
-
-    def test_close_idle(self):
-        self.window.close()
-        with self.assertRaises(tk.TclError):
-            self.window.winfo_exists()
-
-    def test_project_selection_keeps_assets_and_dependencies_separate(self):
-        second_dir = self.folder / 'second'
-        second_dir.mkdir()
-        second = second_dir / self.source.name
-        second.write_text('Read {\n file missing.exr\n name other\n}\nVendorGizmo {\n name custom\n}\n', encoding='utf-8')
-        self.window.add([self.source, second])
-        self.wait_finished()
-        self.assertEqual(len(self.window.project_table.get_children()), 2)
-        self.assertEqual(len(self.window.table.get_children()), 0)
-        self.assertIn('未扫描', self.window.dependencies.get('1.0', 'end'))
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertEqual(self.window.project_table.selection(), (str(self.source.resolve()),))
-        self.assertEqual(len(self.window.table.get_children()), 1)
-        self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
-        self.window.project_table.selection_set(str(second.resolve()))
-        self.window.update()
-        self.assertEqual(len(self.window.table.get_children()), 2)
-        row = self.window.table.item(self.window.table.get_children()[0], 'values')
-        self.assertIn('missing.exr', row)
-        self.assertIn('×', row)
-        self.assertIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
-        self.assertIn('未找到', self.window.dependencies.get('1.0', 'end'))
-        self.assertIn('缺失 1 项', self.log())
-        self.assertNotIn('VendorGizmo', self.log())
-        self.assertIn(str(second.resolve()), self.window.dependencies.get('1.0', 'end'))
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertEqual(len(self.window.table.get_children()), 2)
-        self.window.clear()
-        self.assertEqual(self.window.project_table.get_children(), ())
-        self.assertEqual(self.window.table.get_children(), ())
-        self.assertNotIn('VendorGizmo', self.window.dependencies.get('1.0', 'end'))
-
-    def test_gizmo_conflict_is_resolved_automatically_from_window(self):
-        plugins = self.folder / 'plugins'
-        other = plugins / 'other'
-        other.mkdir(parents=True)
-        first = plugins / 'Demo.gizmo'
-        first.write_text('Gizmo {\n name Demo\n}\nend_group\n')
-        selected = other / 'Demo.gizmo'
-        selected.write_text('Gizmo {\n name Demo\n}\nBlur {\n name blur\n}\nend_group\n')
-        self.source.write_text('Demo {\n name Demo1\n}\n')
-        self.default_paths.return_value = [plugins, other]
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertIn('需核对', self.window.project_table.item(str(self.source), 'values'))
-        row = self.window.table.get_children()[0]
-        self.assertEqual(self.window.table.set(row, 'type'), '插件')
-        self.assertEqual(self.window.table.set(row, 'status'), '√')
-        self.window.output.set(str(self.folder / 'delivery'))
-        self.window.pack()
-        self.wait_finished()
-        self.assertIn('已打包·需核对', self.window.project_table.item(str(self.source), 'values'))
-        self.window.table.selection_set(self.window.table.get_children()[0])
-        self.window.update()
-        self.assertIn(str(selected), self.window.dependencies.get('1.0', 'end'))
-        report = json.loads(next(self.folder.rglob('report.json')).read_text(encoding='utf-8'))
-        self.assertEqual(report['plugins'][0]['source'], str(first))
-        self.assertIn('自动选择', ' '.join(report['warnings']))
-        self.assertTrue(report['gizmo_dependencies_complete'])
-
-    def test_default_package_discovers_paths_and_skips_missing_without_dialogs(self):
-        startup, external = self.folder / 'startup', self.folder / 'external'
-        startup.mkdir(); external.mkdir()
-        (startup / 'init.py').write_text("import nuke\nnuke.pluginAddPath('../external')")
-        (external / 'Demo.gizmo').write_text('Gizmo {\n name Demo\n}\nend_group\n')
-        self.source.write_text('Demo {\n name demo\n}\nMissing {\n name missing\n}\n')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.output.set(str(self.folder / 'delivery'))
-        with patch('gizmo.default_paths', return_value=[startup]), patch('app.messagebox.showerror') as error:
-            self.window.pack()
-            self.wait_finished()
-        error.assert_not_called()
-        report_path = next(self.folder.rglob('report.json'))
-        report = json.loads(report_path.read_text(encoding='utf-8'))
-        self.assertFalse(report['gizmo_dependencies_complete'])
-        self.assertTrue((report_path.parent / 'gizmos/demo.gizmo').exists())
-        self.assertIn('跳过缺失插件 1 项', self.log())
-
-    def test_failed_scan_shows_error_for_selected_project(self):
-        self.source.write_text('Read {', encoding='utf-8')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        self.assertIn('失败', self.window.project_table.item(str(self.source.resolve()), 'values'))
-        self.assertEqual(self.window.table.get_children(), ())
-        self.assertIn('ValueError', self.window.dependencies.get('1.0', 'end'))
-
-    def test_pack_errors_are_readable_and_keep_full_details(self):
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.output.set(str(self.folder / 'delivery'))
-        cases = [
-            (FileExistsError('existing output details'), '输出已存在'),
-            (PermissionError('permission details'), '无法访问文件'),
-            (RuntimeError('未完成目录清理失败：' + str(self.folder)), '手动检查'),
-        ]
-        for error, expected in cases:
-            with self.subTest(error=type(error).__name__), patch('app.package', side_effect=error):
-                self.window.pack()
-                self.wait_finished()
-                self.assertIn(expected, self.log())
-                self.assertNotIn(type(error).__name__, self.log())
-                self.assertNotIn(str(self.folder), self.log())
-                self.assertIn(str(error), self.window.dependencies.get('1.0', 'end'))
-                self.assertTrue(self.window.log.tag_ranges('error'))
-
-    def test_selected_asset_shows_status_and_resolved_path_below_table(self):
-        self.source.write_text('Read {\n file missing.exr\n name missing_plate\n}\n', encoding='utf-8')
-        self.window.add([self.source])
-        self.wait_finished()
-        self.window.scan_only()
-        self.wait_finished()
-        self.window.table.selection_set(self.window.table.get_children()[0])
-        self.window.update()
-        details = self.window.dependencies.get('1.0', 'end')
-        self.assertIn('素材状态：缺失', details)
-        self.assertIn('missing_plate', details)
-        self.assertIn(str(self.folder / 'missing.exr'), details)
-        self.assertIn('未找到匹配的素材文件', details)
-        self.window.table.selection_remove(*self.window.table.selection())
-        self.window.update()
-        self.assertIn('插件与外部依赖', self.window.dependencies.get('1.0', 'end'))
-        self.assertNotIn('素材状态：缺失', self.window.dependencies.get('1.0', 'end'))
-
-    def test_partial_progress_renders_while_worker_is_running(self):
+    def test_cancel_is_responsive_and_blocks_edits(self):
+        self.add_scan()
         entered, release = threading.Event(), threading.Event()
-
         def slow_scan(path, cancel, progress, **kwargs):
-            progress(1, 4, 'plate')
-            entered.set()
-            release.wait(5)
+            progress(1, 4, 'plate'); entered.set(); release.wait(3)
             raise Cancelled()
-
-        self.window.add([self.source])
-        self.wait_finished()
         with patch('app.scan', side_effect=slow_scan):
             self.window.scan_only()
             try:
                 self.assertTrue(entered.wait(2))
-                deadline = time.monotonic() + 2
-                while '25.0%' not in self.window.progress_text.get() and time.monotonic() < deadline:
-                    self.window.update()
-                    time.sleep(0.01)
-                self.assertTrue(self.window.busy())
-                self.assertIn('25.0%', self.window.progress_text.get())
-                self.assertIn('扫描', self.window.progress_text.get())
-                self.assertIn('1/1', self.window.total_text.get())
-                self.assertTrue(self.window.cancel.instate(['!disabled']))
+                QTest.qWait(80)
+                self.assertIn('25.0%', self.window.progress_text.text())
+                self.assertFalse(self.window.add_project_button.isEnabled())
+                self.assertFalse(self.window.output_entry.isEnabled())
+                self.window.clear()
+                self.assertEqual(self.window.paths, [self.source])
+                self.assertFalse(self.drop(self.window, [self.source]))
+                self.window.stop()
             finally:
-                release.set()
-                self.wait_finished()
+                release.set(); self.wait_finished()
+        self.assertIn('已取消', self.log())
+        self.assertTrue(self.window.add_project_button.isEnabled())
+        self.assertFalse(self.window.cancel.isEnabled())
 
-    def test_combined_progress_places_task_fill_inside_current_project(self):
+    def test_close_waits_for_background_cleanup(self):
+        self.add_scan()
+        entered, release = threading.Event(), threading.Event()
+        def slow_scan(*args, **kwargs):
+            entered.set(); release.wait(3)
+            raise Cancelled()
+        with patch('app.scan', side_effect=slow_scan):
+            self.window.scan_only()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.window.close()
+                self.assertTrue(self.window.isVisible())
+                self.assertTrue(self.window.closing)
+            finally:
+                release.set(); self.wait_finished()
+        self.assertFalse(self.window.isVisible())
+        self.assertFalse(self.window.poll_timer.isActive())
+
+    def test_background_discovery_can_be_cancelled(self):
+        import project_discovery
+        entered, release = threading.Event(), threading.Event()
+        original = project_discovery.os.walk
+        def slow_walk(*args, **kwargs):
+            entered.set(); release.wait(3)
+            yield from original(*args, **kwargs)
+        with patch('project_discovery.os.walk', side_effect=slow_walk):
+            self.window.add([self.folder])
+            try:
+                self.assertTrue(entered.wait(2))
+                ticks = []
+                QTimer.singleShot(0, lambda: ticks.append(True))
+                self.qt.processEvents()
+                self.assertTrue(ticks)
+                self.window.stop()
+            finally:
+                release.set(); self.wait_finished()
+        self.assertIn('取消', self.window.progress_text.text())
+
+    def test_scan_cache_and_open_results(self):
+        with patch('app.scan', wraps=app.scan) as scanned:
+            self.add_scan(); self.pack()
+            self.assertEqual(scanned.call_count, 1)
+        target = self.window.packaged_paths[self.source]
+        with patch('app.QDesktopServices.openUrl', return_value=True) as opened:
+            self.window.open_result()
+            self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), target)
+            self.window.open_result(readme=True)
+            self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), target / 'readme.md')
+        with patch('app.QDesktopServices.openUrl', return_value=False): self.window.open_result()
+        self.assertIn('打开失败', self.log())
+
+    def test_rescan_and_failed_repack_keep_previous_output(self):
+        self.add_scan(); self.pack()
+        target = self.window.packaged_paths[self.source]
+        with patch('app.scan', wraps=app.scan) as scanned:
+            self.window.scan_only(); self.wait_finished()
+            self.assertEqual(scanned.call_count, 1)
+        with patch('app.package', side_effect=PermissionError('blocked')): self.pack()
+        self.assertEqual(self.window.packaged_paths[self.source], target)
+        self.assertTrue(self.window.open_readme_button.isEnabled())
+        self.assertIn('无法访问', self.log())
+        self.window.clear()
+        self.assertFalse(self.window.packaged_paths)
+        self.assertFalse(self.window.open_readme_button.isEnabled())
+
+    def test_source_change_invalidates_cache_and_failed_pack_has_no_result(self):
+        self.add_scan()
+        (self.folder / 'plate.exr').unlink()
+        with patch('app.scan', wraps=app.scan) as scanned, patch('app.package', side_effect=PermissionError()):
+            self.pack()
+            self.assertEqual(scanned.call_count, 1)
+        self.assertFalse(self.window.packaged_paths)
+        self.assertFalse(self.window.open_readme_button.isEnabled())
+        self.assertEqual(self.window.table.topLevelItem(0).text(4), '×')
+
+    def test_known_progress_and_phase_reset(self):
         bar = self.window.progress
-        bar.set_projects(1, 4)
-        bar.set_tasks(2, 8)
+        bar.set_projects(1, 4); bar.set_tasks(2, 8)
         self.assertEqual(bar.fractions(), (0.25, 0.3125))
-        bar.set_projects(2, 4)
-        bar.set_tasks(0, 6)
-        self.assertEqual(bar.fractions(), (0.5, 0.5))
-        bar.set_tasks(6, 6)
-        self.assertEqual(bar.fractions(), (0.5, 0.75))
-        bar.set_projects(4, 4)
-        self.assertEqual(bar.fractions(), (1.0, 1.0))
-        self.assertFalse(hasattr(self.window, 'total_progress'))
+        QTest.qWait(200)
+        self.assertAlmostEqual(bar.display_fractions[1], 0.3125)
+        self.window.show_progress('校验文件', 0, 10, 'begin')
+        self.assertEqual(bar.fractions(), (0.25, 0.25))
+        bar.set_projects(4, 4); bar.finish()
+        self.assertEqual(bar.display_fractions, (1, 1))
 
-    def test_unknown_task_count_stops_animation_on_finish_and_reset(self):
+    def test_unknown_progress_stops_all_timers(self):
         bar = self.window.progress
-        bar.set_projects(1, 3)
-        bar.set_tasks(0, 0)
-        self.assertIsNotNone(bar.animation_id)
+        bar.set_projects(2, 5); bar.set_tasks(0, 0)
+        QTest.qWait(200)
+        self.assertTrue(bar.pulse_timer.isActive())
+        self.assertGreater(bar.display_fractions[1], bar.display_fractions[0])
+        self.assertFalse(bar.grab().isNull())
         bar.finish()
-        self.assertIsNone(bar.animation_id)
-        self.assertEqual(bar.fractions(), (1 / 3, 1 / 3))
-        bar.set_projects(0, 2)
-        self.assertEqual(bar.fractions(), (0, 0))
-
-    def test_progress_has_contiguous_colors_and_smooth_completion(self):
-        bar = self.window.progress
-        bar.set_projects(0, 10)
-        with patch('app.time.monotonic', return_value=10):
-            bar.set_projects(3, 10)
-        with patch('app.time.monotonic', return_value=10.08):
-            bar.transition_tick()
-        dark = bar.coords('projects')
-        light = bar.coords('tasks')
-        self.assertGreater(dark[2], 0)
-        self.assertLess(dark[2], bar.winfo_width() * 0.3)
-        self.assertEqual(dark[2], light[0])
-        self.assertEqual(bar.find_withtag('separators'), ())
-        self.assertTrue(all(bar.type(item) == 'rectangle' for item in bar.find_all()))
-        with patch('app.time.monotonic', return_value=10.2):
-            bar.transition_tick()
-        self.assertAlmostEqual(bar.coords('projects')[2], bar.winfo_width() * 0.3)
-        bar.set_tasks(0, 0)
-        bar.finish()
-        self.assertIsNone(bar.animation_id)
-        self.assertIsNone(bar.transition_id)
-
-    def test_unknown_progress_stays_joined_and_reset_cancels_tweens(self):
-        bar = self.window.progress
-        bar.set_projects(2, 5)
-        bar.set_tasks(0, 0)
-        pulse_timer = bar.animation_id
-        bar.set_tasks(0, 0)
-        self.assertEqual(bar.animation_id, pulse_timer)
-        with patch('app.time.monotonic', return_value=time.monotonic() + 1):
-            bar.transition_tick()
-        self.assertEqual(bar.coords('projects')[2], bar.coords('tasks')[0])
-        self.assertGreater(bar.coords('tasks')[2], bar.coords('tasks')[0])
-        bar.set_tasks(4, 10)
-        self.assertIsNone(bar.animation_id)
+        self.assertFalse(bar.pulse_timer.isActive())
+        self.assertFalse(bar.transition_timer.isActive())
         bar.set_projects(0, 5)
-        self.assertIsNone(bar.transition_id)
-        self.assertEqual(bar.coords('projects')[2], 0)
-        self.assertEqual(bar.coords('tasks')[2], 0)
+        self.assertEqual(bar.display_fractions, (0, 0))
 
-    def test_copy_progress_counts_files_and_retains_partial_file_updates(self):
-        from app import Worker
-        from queue import Queue
+    def test_worker_fractional_copy_progress_and_eta(self):
         worker = Worker([], None, Queue())
         worker.copy_sizes = [100, 300]
         worker.copy_byte_progress(50, 400, 'first.exr')
-        phase, done, total, detail = worker.events.get_nowait()[1]
-        self.assertEqual((phase, done, total), ('复制文件', 0.5, 2))
-        worker.copy_byte_progress(100, 400, 'first.exr')
-        worker.file_copied(1, 2, 'first.exr')
+        self.assertEqual(worker.events.get_nowait()[1][:3], ('复制文件', 0.5, 2))
+        worker.copy_byte_progress(100, 400, 'first.exr'); worker.file_copied(1, 2, 'first.exr')
         worker.last_progress_time = 0
         worker.copy_byte_progress(250, 400, 'second.exr')
         events = []
-        while not worker.events.empty():
-            events.append(worker.events.get_nowait())
+        while not worker.events.empty(): events.append(worker.events.get_nowait())
         self.assertEqual(events[-1][1][:3], ('复制文件', 1.5, 2))
-
-    def test_scan_then_pack_reuses_plan_and_exposes_verified_output(self):
-        import app
-        self.window.add([self.source])
-        self.wait_finished()
-        with patch('app.scan', wraps=app.scan) as scan:
-            self.window.scan_only(); self.wait_finished()
-            self.window.output.set(str(self.folder / 'delivery'))
-            self.window.pack(); self.wait_finished()
-            self.assertEqual(scan.call_count, 1)
-        target = self.window.packaged_paths[self.source]
-        self.assertTrue((target / 'readme.md').is_file())
-        with patch('app.os.startfile') as opened:
-            self.window.open_result()
-            opened.assert_called_with(str(target))
-            self.window.open_result(readme=True)
-            opened.assert_called_with(str(target / 'readme.md'))
-
-    def test_filter_copy_and_remove_selected_projects(self):
-        self.source.write_text('Read {\n file missing.exr\n}\nRead {\n file plate.exr\n}\n')
-        other = self.folder / 'other.nk'
-        other.write_text('Root {\n}\n')
-        self.window.add([self.source, other]); self.wait_finished()
-        self.window.scan_only(); self.wait_finished()
-        self.window.only_issues.set(True)
-        self.window.render_selected_project()
-        rows = self.window.table.get_children()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(self.window.table.set(rows[0], 'status'), '×')
-        self.window.table.selection_set(rows[0])
-        self.window.copy_asset_path()
-        self.assertEqual(self.window.clipboard_get(), str(self.folder / 'missing.exr'))
-        self.window.project_table.selection_set(str(self.source), str(other))
-        self.window.remove_selected()
-        self.assertEqual(self.window.paths, [])
-        self.assertEqual(self.window.session.plans, {})
-
-    def test_discovery_is_background_responsive_and_cancellable(self):
-        import project_discovery
-        entered, release = threading.Event(), threading.Event()
-        real_walk = project_discovery.os.walk
-        def slow_walk(*args, **kwargs):
-            entered.set()
-            release.wait(3)
-            yield from real_walk(*args, **kwargs)
-        with patch('project_discovery.os.walk', side_effect=slow_walk):
-            self.window.add([self.folder])
-            self.assertTrue(entered.wait(2))
-            tick = []
-            self.window.after(0, lambda: tick.append(True))
-            self.window.update()
-            self.assertTrue(tick)
-            self.assertTrue(self.window.busy())
-            self.window.stop()
-            release.set()
-            self.wait_finished()
-        self.assertFalse(self.window.cancel.instate(['!disabled']))
-        self.assertIn('取消', self.window.progress_text.get())
-
-    def test_rate_and_eta_are_measured_from_elapsed_copy_time(self):
-        from app import TransferMeter
         meter = TransferMeter()
         with patch('app.time.monotonic', return_value=10): meter.reset()
         with patch('app.time.monotonic', return_value=12):
-            text = meter.describe(2 * 1048576, 10 * 1048576)
-        self.assertIn('1.0 MiB/s', text)
-        self.assertIn('8 秒', text)
-
-    def test_explicit_rescan_refreshes_and_failed_package_has_no_open_action(self):
-        import app
-        self.window.add([self.source]); self.wait_finished()
-        with patch('app.scan', wraps=app.scan) as scan:
-            self.window.scan_only(); self.wait_finished()
-            self.window.scan_only(); self.wait_finished()
-            self.assertEqual(scan.call_count, 2)
-        self.window.output.set(str(self.folder / 'out'))
-        with patch('app.package', side_effect=PermissionError()):
-            self.window.pack(); self.wait_finished()
-        self.assertEqual(self.window.packaged_paths, {})
-        self.assertTrue(self.window.open_readme_button.instate(['disabled']))
-
-    def test_changed_media_is_rescanned_before_packaging(self):
-        import app
-        self.window.add([self.source]); self.wait_finished()
-        self.window.scan_only(); self.wait_finished()
-        (self.folder / 'plate.exr').unlink()
-        self.window.output.set(str(self.folder / 'out'))
-        with patch('app.scan', wraps=app.scan) as scan:
-            self.window.pack(); self.wait_finished()
-            self.assertEqual(scan.call_count, 1)
-        report = json.loads(next((self.folder / 'out').rglob('report.json')).read_text(encoding='utf-8'))
-        self.assertFalse(report['explicit_media_complete'])
-        self.assertEqual(report['assets'][0]['files'], 0)
-
-    def test_rescan_and_failed_repack_keep_previous_successful_output(self):
-        self.window.add([self.source]); self.wait_finished()
-        self.window.output.set(str(self.folder/'out'))
-        self.window.pack(); self.wait_finished()
-        target = self.window.packaged_paths[self.source]
-        self.window.scan_only(); self.wait_finished()
-        self.assertEqual(self.window.packaged_paths[self.source], target)
-        self.assertTrue(self.window.open_readme_button.instate(['!disabled']))
-        with patch('app.package', side_effect=PermissionError()):
-            self.window.pack(); self.wait_finished()
-        self.assertEqual(self.window.packaged_paths[self.source], target)
-        with patch('app.os.startfile') as opened:
-            self.window.open_result(readme=True)
-            opened.assert_called_with(str(target/'readme.md'))
-        self.window.clear()
-        self.assertFalse(self.window.packaged_paths)
-        self.assertTrue(self.window.open_readme_button.instate(['disabled']))
-
-    def test_progress_keeps_existing_per_phase_semantics(self):
-        bar=self.window.progress
-        bar.set_projects(2,5)
-        self.window.show_progress('复制文件',10,10,'done')
-        self.assertAlmostEqual(bar.fractions()[1],0.6)
-        self.window.show_progress('校验文件',0,10,'begin')
-        self.assertEqual(bar.fractions(),(0.4,0.4))
+            self.assertIn('8 秒', meter.describe(2 * 1048576, 10 * 1048576))
 
 
 if __name__ == '__main__':

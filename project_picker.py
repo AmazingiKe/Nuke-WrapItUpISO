@@ -243,10 +243,9 @@ class NativeProjectDialog:
 
 
 def ask_projects(parent, initialdir):
-    parent.update_idletasks()
     user = C.WinDLL('user32')
     user.GetAncestor.argtypes = [P, U]
     user.GetAncestor.restype = P
-    hwnd = user.GetAncestor(parent.winfo_id(), 2)
+    hwnd = user.GetAncestor(int(parent.winId()), 2)
     with NativeProjectDialog(initialdir) as dialog:
         return dialog.show(hwnd)

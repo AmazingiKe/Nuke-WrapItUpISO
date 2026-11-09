@@ -2,7 +2,6 @@
 
 from pathlib import Path
 import json
-from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.win32.versioninfo import (
     VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
     VarFileInfo, VarStruct,
@@ -29,13 +28,12 @@ a = Analysis(
     [str(project_root / 'app.py')],
     pathex=[str(project_root)],
     binaries=[],
-    datas=collect_data_files('tkinterdnd2') + [(str(project_root / 'version.json'), '.'),
-                                            (str(project_root / 'assets'), 'assets')],
+    datas=[(str(project_root / 'version.json'), '.'), (str(project_root / 'assets'), 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tkinter', 'tkinterdnd2', 'PyQt5', 'PyQt6', 'PySide2'],
     noarchive=False,
     optimize=0,
 )

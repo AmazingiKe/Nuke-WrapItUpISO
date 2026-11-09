@@ -1,1 +1,1 @@
-tkinterdnd2>=0.4,<1
+PySide6>=6.10,<7
