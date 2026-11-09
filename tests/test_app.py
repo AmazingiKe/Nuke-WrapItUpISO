@@ -293,6 +293,134 @@ class WindowTests(unittest.TestCase):
             restored.close()
             restored.deleteLater()
 
+    def test_manual_relink_from_file_picker_survives_rescan_and_pack(self):
+        self.source.write_text('Read {\n file missing.exr\n name Plate\n}\n')
+        original = self.source.read_bytes()
+        self.add_scan()
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.assertTrue(self.window.relink_file_button.isEnabled())
+        with patch('wrapitupiso.ui.window.QFileDialog.getOpenFileName', return_value=(str(self.folder / 'plate.exr'), '')):
+            QTest.mouseClick(self.window.relink_file_button, Qt.MouseButton.LeftButton)
+            self.wait_finished()
+        self.assertIn(str(self.folder / 'plate.exr'), self.window.table.topLevelItem(0).text(2))
+        self.window.scan_only()
+        self.wait_finished()
+        self.assertEqual(self.window.plans[self.source][0].assets[0].source, str(self.folder / 'plate.exr'))
+        self.pack()
+        output = self.window.packaged_paths[self.source]
+        self.assertEqual(next((output / 'media').rglob('*.exr')).read_bytes(), b'pixels')
+        self.assertEqual(self.source.read_bytes(), original)
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.window.restore_asset_paths()
+        self.wait_finished()
+        self.assertFalse(self.window.plans[self.source][0].assets[0].files)
+
+    def test_folder_relink_preview_requires_choice_for_ambiguous_matches(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        from wrapitupiso.engine.relink import dependency_key
+        self.source.write_text('Read {\n file lost/plate.exr\n name Plate\n}\nRead {\n file lost/other.exr\n name Other\n}\n')
+        self.add_scan()
+        (self.folder / 'a').mkdir()
+        (self.folder / 'a/plate.exr').write_bytes(b'other pixels')
+        (self.folder / 'other.exr').write_bytes(b'other')
+        seen = []
+        def review(dialog):
+            seen.append(dialog)
+            self.assertEqual(len(dialog.choices()), 1)
+            self.assertEqual(dialog.combos[0].currentIndex(), 0)
+            dialog.combos[0].setCurrentIndex(2)
+            self.assertEqual(len(dialog.choices()), 2)
+            return RelinkDialog.DialogCode.Accepted
+        with patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)), patch.object(RelinkDialog, 'exec', review):
+            QTest.mouseClick(self.window.relink_folder_button, Qt.MouseButton.LeftButton)
+            self.wait_finished()
+        self.assertEqual(len(seen), 1)
+        plan = self.window.plans[self.source][0]
+        self.assertEqual(len(self.window.replacements[self.source]), 2)
+        self.assertTrue(all(asset.files for asset in plan.assets))
+        self.assertIn(dependency_key(plan.assets[0]), self.window.replacements[self.source])
+
+    def test_cancelled_folder_preview_does_not_replace_paths(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        self.add_scan()
+        original = self.window.plans[self.source][0]
+        with patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)), patch.object(RelinkDialog, 'exec', return_value=RelinkDialog.DialogCode.Rejected):
+            self.window.find_asset_paths()
+            self.wait_finished()
+        self.assertIs(self.window.plans[self.source][0], original)
+        self.assertFalse(self.window.replacements)
+
+    def test_relink_search_runs_in_background_and_can_cancel(self):
+        from wrapitupiso.engine.relink import find_candidates
+        self.add_scan()
+        entered, release = threading.Event(), threading.Event()
+        def slow_search(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return find_candidates(*args, **kwargs)
+        with patch('wrapitupiso.ui.workers.find_candidates', side_effect=slow_search), patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)):
+            try:
+                self.window.find_asset_paths()
+                self.assertTrue(entered.wait(2))
+                ticks = []
+                QTimer.singleShot(0, lambda: ticks.append(True))
+                self.qt.processEvents()
+                self.assertTrue(ticks)
+                self.assertFalse(self.window.relink_folder_button.isEnabled())
+                self.window.stop()
+            finally:
+                release.set()
+                self.wait_finished()
+        self.assertFalse(self.window.replacements)
+        self.assertIn('已取消路径', self.log())
+
+    def test_search_replacements_stay_with_original_project_if_selection_changes(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        other = self.folder / 'other.nk'
+        self.source.write_text('Read {\n file lost/plate.exr\n name Plate\n}\n')
+        other.write_text('Read {\n file lost/other.exr\n name Other\n}\n')
+        self.add_scan([self.source, other])
+        self.select_project(self.source)
+        with patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)), patch.object(RelinkDialog, 'exec', return_value=RelinkDialog.DialogCode.Accepted):
+            self.window.find_asset_paths()
+            self.select_project(other)
+            self.wait_finished()
+        self.assertTrue(self.window.plans[self.source][0].assets[0].files)
+        self.assertFalse(self.window.plans[other][0].assets[0].files)
+        self.assertNotIn(other, self.window.replacements)
+
+    def test_failed_relink_keeps_previous_plan_and_choices(self):
+        from wrapitupiso.engine.relink import dependency_key
+        self.add_scan()
+        original = self.window.plans[self.source][0]
+        choices = {dependency_key(original.assets[0]): str(self.folder / 'other.exr')}
+        with patch.object(self.window.session, 'scan', side_effect=PermissionError('relink read denied')):
+            self.window.start_relink(choices)
+            self.wait_finished()
+        self.assertIs(self.window.plans[self.source][0], original)
+        self.assertFalse(self.window.replacements)
+        self.assertIn('relink read denied', self.log())
+
+    def test_close_cancels_relink_without_opening_preview(self):
+        from wrapitupiso.ui.relink_dialog import RelinkDialog
+        entered, release = threading.Event(), threading.Event()
+        self.add_scan()
+        def slow_search(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            raise Cancelled()
+        with patch('wrapitupiso.ui.workers.find_candidates', side_effect=slow_search), patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)), patch.object(RelinkDialog, 'exec') as preview:
+            try:
+                self.window.find_asset_paths()
+                self.assertTrue(entered.wait(2))
+                self.window.close()
+                self.assertTrue(self.window.isVisible())
+            finally:
+                release.set()
+                self.wait_finished()
+            preview.assert_not_called()
+        self.assertFalse(self.window.isVisible())
+
     def test_window_position_does_not_drift_across_restarts(self):
         self.window.move(100, 100)
         self.qt.processEvents()

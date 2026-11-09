@@ -5,6 +5,7 @@ import time
 from wrapitupiso.config.i18n import status_code, message as msg, fmt, join_messages, error_message
 from wrapitupiso.engine.core import Cancelled, DependencyError, package, scan
 from wrapitupiso.engine.scan_cache import ScanSession
+from wrapitupiso.engine.relink import find_candidates
 
 
 def readable_error(error):
@@ -69,10 +70,11 @@ class TransferMeter:
 
 
 class Worker(threading.Thread):
-    def __init__(self, paths, output, events, session=None, language='zh-CN', before_run=None):
+    def __init__(self, paths, output, events, session=None, language='zh-CN', before_run=None, replacements=None):
         super().__init__(daemon=False)
         self.language = language
         self.before_run = before_run
+        self.replacements = {path: dict(values) for path, values in (replacements or {}).items()}
         self.paths = paths
         self.output = output
         self.events = events
@@ -125,7 +127,7 @@ class Worker(threading.Thread):
                 self.emit('project_state', path, msg('status.scanning'))
                 self.report_progress(msg('phase.read'), 0, 0, path.name)
                 try:
-                    plan = self.session.scan(path, self.cancelled.is_set, progress=lambda *values: self.report_progress(msg('phase.scan'), *values), reuse=bool(self.output), scanner=scan)
+                    plan = self.session.scan(path, self.cancelled.is_set, progress=lambda *values: self.report_progress(msg('phase.scan'), *values), reuse=bool(self.output), scanner=scan, replacements=self.replacements.get(path))
                     self.report_progress(msg('phase.measure'), 0, 0, path.name)
                     file_sizes, size = plan.measure(self.cancelled.is_set, progress=lambda *values: self.report_progress(msg('phase.measure'), *values))
                     if self.cancelled.is_set():
@@ -156,3 +158,31 @@ class Worker(threading.Thread):
                 self.emit('project_done', completed + failed, len(self.paths))
         finally:
             self.emit('finished', completed, failed, cancelled)
+
+
+class RelinkWorker(Worker):
+    def __init__(self, plan, events, session, choices, *, folder=None, targets=None, before_run=None):
+        super().__init__([plan.script], None, events, session, before_run=before_run)
+        self.plan, self.choices = plan, dict(choices)
+        self.folder, self.targets = folder, list(targets or [])
+        self.result = self.error = None
+
+    def run(self):
+        try:
+            if self.before_run: self.before_run()
+            if self.cancelled.is_set(): raise Cancelled()
+            if self.folder is not None:
+                self.result = find_candidates(self.targets, self.folder, self.cancelled.is_set,
+                    lambda *values: self.report_progress(msg('relink.searching'), *values))
+            else:
+                plan = self.session.scan(self.plan.script, self.cancelled.is_set, replacements=self.choices,
+                    progress=lambda *values: self.report_progress(msg('relink.applying'), *values))
+                _, size = plan.measure(self.cancelled.is_set)
+                self.result = plan, size
+            if self.cancelled.is_set(): raise Cancelled()
+        except Cancelled:
+            self.cancelled.set()
+        except Exception as error:
+            self.error = error
+        finally:
+            self.emit('relink_finished', self)

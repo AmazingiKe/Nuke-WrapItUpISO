@@ -360,9 +360,9 @@
     "ja": "種類"
   },
   "column.source": {
-    "zh-CN": "原路径 / 来源",
-    "en": "Original Path / Source",
-    "ja": "元のパス / 参照元"
+    "zh-CN": "路径 / 来源",
+    "en": "Path / Source",
+    "ja": "パス / 参照元"
   },
   "column.files": {
     "zh-CN": "文件数",
@@ -1594,6 +1594,61 @@
     "en": "; ",
     "ja": "、"
   },
+  "relink.manual": {
+    "zh-CN": "指定文件…",
+    "en": "Choose File…",
+    "ja": "ファイルを指定…"
+  },
+  "relink.find": {
+    "zh-CN": "文件夹查找…",
+    "en": "Find in Folder…",
+    "ja": "フォルダーで検索…"
+  },
+  "relink.restore": {
+    "zh-CN": "恢复原路径",
+    "en": "Restore Original",
+    "ja": "元のパスに戻す"
+  },
+  "relink.manual_hint": {
+    "zh-CN": "为选中的素材或插件指定新文件；序列帧选择其中一帧",
+    "en": "Choose a replacement for the selected dependency; select one frame for a sequence",
+    "ja": "選択した依存ファイルを指定します。連番は1フレームを選択"
+  },
+  "relink.find_hint": {
+    "zh-CN": "递归查找当前工程的全部素材、字体和插件，预览匹配后替换",
+    "en": "Search recursively for all dependencies of this project and review replacements",
+    "ja": "現在のプロジェクトの依存ファイルを再帰検索し、置換候補を確認"
+  },
+  "relink.find_selected": {
+    "zh-CN": "在文件夹中查找选中项…",
+    "en": "Find Selected in Folder…",
+    "ja": "選択項目をフォルダーで検索…"
+  },
+  "relink.pick_file": {
+    "zh-CN": "指定替换文件",
+    "en": "Choose Replacement File",
+    "ja": "置換ファイルを指定"
+  },
+  "relink.pick_folder": {
+    "zh-CN": "选择依赖搜索文件夹",
+    "en": "Choose Dependency Search Folder",
+    "ja": "依存ファイルの検索フォルダーを選択"
+  },
+  "relink.plugin_filter": {
+    "zh-CN": "插件 (*.gizmo *.dll *.so *.dylib *.ofx)",
+    "en": "Plugins (*.gizmo *.dll *.so *.dylib *.ofx)",
+    "ja": "プラグイン (*.gizmo *.dll *.so *.dylib *.ofx)"
+  },
+  "relink.font_filter": {
+    "zh-CN": "字体 (*.ttf *.otf *.ttc *.otc *.pfa *.pfb)",
+    "en": "Fonts (*.ttf *.otf *.ttc *.otc *.pfa *.pfb)",
+    "ja": "フォント (*.ttf *.otf *.ttc *.otc *.pfa *.pfb)"
+  },
+  "relink.file_filter": {
+    "zh-CN": "所有文件 (*)",
+    "en": "All Files (*)",
+    "ja": "すべてのファイル (*)"
+  },
   "relink.plugin_type": {
     "zh-CN": "请选择 Gizmo 或二进制插件文件。",
     "en": "Choose a Gizmo or binary plugin file.",
@@ -1608,6 +1663,91 @@
     "zh-CN": "此项是序列帧，请选择带帧号的文件或输入序列路径。",
     "en": "This is a sequence. Select a numbered frame or enter a sequence path.",
     "ja": "この項目は連番です。番号付きフレームまたは連番パスを指定してください。"
+  },
+  "relink.searching": {
+    "zh-CN": "正在查找替换路径…",
+    "en": "Searching for replacement paths…",
+    "ja": "置換パスを検索中…"
+  },
+  "relink.applying": {
+    "zh-CN": "正在检查替换后的依赖…",
+    "en": "Checking replacement dependencies…",
+    "ja": "置換後の依存関係を確認中…"
+  },
+  "relink.preview": {
+    "zh-CN": "预览路径替换",
+    "en": "Review Path Replacements",
+    "ja": "パスの置換を確認"
+  },
+  "relink.preview_hint": {
+    "zh-CN": "唯一匹配默认选中；多个候选请手动选择。原工程不变，替换用于后续打包。",
+    "en": "Unique matches are selected. Choose among ambiguous matches. Replacements apply to packaging; source projects remain unchanged.",
+    "ja": "一意の候補は選択済みです。複数候補は手動で選択してください。元のプロジェクトを変更せず、パッケージに適用します。"
+  },
+  "relink.match_summary": {
+    "zh-CN": "匹配 {matched} 项 · 多个候选 {ambiguous} 项 · 未找到 {missing} 项",
+    "en": "Matched: {matched} · Ambiguous: {ambiguous} · Not found: {missing}",
+    "ja": "一致: {matched} · 複数候補: {ambiguous} · 未検出: {missing}"
+  },
+  "relink.current_path": {
+    "zh-CN": "当前路径 / 原引用",
+    "en": "Current Path / Reference",
+    "ja": "現在のパス / 参照"
+  },
+  "relink.candidate": {
+    "zh-CN": "替换路径",
+    "en": "Replacement Path",
+    "ja": "置換先パス"
+  },
+  "relink.keep": {
+    "zh-CN": "保留当前路径",
+    "en": "Keep current path",
+    "ja": "現在のパスを維持"
+  },
+  "relink.not_found": {
+    "zh-CN": "未找到匹配文件",
+    "en": "No matching file found",
+    "ja": "一致するファイルがありません"
+  },
+  "relink.apply": {
+    "zh-CN": "应用替换",
+    "en": "Apply Replacements",
+    "ja": "置換を適用"
+  },
+  "relink.dismiss": {
+    "zh-CN": "取消",
+    "en": "Cancel",
+    "ja": "キャンセル"
+  },
+  "relink.external_hint": {
+    "zh-CN": "OFX / 二进制插件仍需在目标电脑安装；指定文件不代表已完成移植。",
+    "en": "OFX / binary plugins still require installation on the target computer; locating a file does not make them portable.",
+    "ja": "OFX / バイナリプラグインは移行先でのインストールが必要です。ファイル指定だけでは移植できません。"
+  },
+  "relink.search_errors": {
+    "zh-CN": "部分目录无法读取：\n{errors}",
+    "en": "Some folders could not be read:\n{errors}",
+    "ja": "一部のフォルダーを読み取れませんでした:\n{errors}"
+  },
+  "relink.failed": {
+    "zh-CN": "路径替换未完成：{error}",
+    "en": "Path replacement failed: {error}",
+    "ja": "パスの置換に失敗しました: {error}"
+  },
+  "relink.cancelled": {
+    "zh-CN": "已取消路径查找或替换，保留原有选择",
+    "en": "Path lookup or replacement cancelled; previous choices kept",
+    "ja": "検索または置換をキャンセルしました。以前の選択を保持します"
+  },
+  "relink.applied": {
+    "zh-CN": "已更新 {count} 项路径选择 · {name}",
+    "en": "Updated {count} path choices · {name}",
+    "ja": "パス選択を {count} 件更新 · {name}"
+  },
+  "relink.detail": {
+    "zh-CN": "已指定替换路径：{path}",
+    "en": "Replacement path: {path}",
+    "ja": "指定した置換パス: {path}"
   },
   "relink.stale": {
     "zh-CN": "工程内容已变化，{count} 项旧路径选择未应用，请重新核对。",

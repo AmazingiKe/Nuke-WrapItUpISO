@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QFile
 from wrapitupiso.config.i18n import Translator, LANGUAGES, Message, normalize_language
 from wrapitupiso.config.settings import SettingsStore, SettingsWriter
 from wrapitupiso.config.paths import resource_path
-from wrapitupiso.ui.workers import Worker, needs_review
+from wrapitupiso.ui.workers import Worker, RelinkWorker, needs_review
+from wrapitupiso.ui.relink_dialog import RelinkDialog
+from wrapitupiso.engine.relink import dependency_key, manual_path
 
 from wrapitupiso.engine.gizmo import Plugin
 from wrapitupiso.config.version import APP_LABEL, APP_NAME, APP_TAGLINE, VERSION
@@ -63,6 +65,7 @@ class Window(QMainWindow):
         self.setAcceptDrops(True)
         self.paths, self.path_set = [], set()
         self.plans, self.packaged_paths, self.project_errors, self.project_items = {}, {}, {}, {}
+        self.replacements = {}
         self.session = ScanSession()
         self.worker = None
         self.events = Queue()
@@ -200,10 +203,20 @@ class Window(QMainWindow):
         self.bind(self.only_issues, 'setToolTip', msg('hint.issues'))
         self.only_issues.toggled.connect(self.render_selected_project)
         details.header.addWidget(self.only_issues)
+        relink_bar = QHBoxLayout()
+        self.relink_file_button = self._button(msg('relink.manual'), 'folder', self.choose_asset_file, msg('relink.manual_hint'))
+        self.relink_folder_button = self._button(msg('relink.find'), 'scan', self.find_asset_paths, msg('relink.find_hint'))
+        self.relink_restore_button = self._text_widget(QPushButton, msg('relink.restore'))
+        self.relink_restore_button.clicked.connect(self.restore_asset_paths)
+        for button in (self.relink_file_button, self.relink_folder_button, self.relink_restore_button):
+            button.setEnabled(False)
+            relink_bar.addWidget(button)
+        relink_bar.addStretch(1)
+        details.body.addLayout(relink_bar)
         self.table = self._tree(lambda: not self.busy(), msg('empty.dependencies'), msg('empty.dependencies_hint'))
         self.bind(self.table, 'setAccessibleName', msg('access.dependencies'))
         self.bind(self.table, 'setHeaderLabels', [msg('column.node'), msg('column.type'), msg('column.source'), msg('column.files'), msg('column.status')])
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.header().setStretchLastSection(False)
         for column, width in enumerate((140, 58, 350, 62, 54)): self.table.setColumnWidth(column, width)
         self.table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -536,6 +549,7 @@ class Window(QMainWindow):
         for action in getattr(self, 'edit_actions', []): action.setEnabled(not busy)
         self.cancel.setEnabled(busy)
         self.language_menu.setEnabled(not busy)
+        self.update_relink_controls(busy=busy)
 
     def dragEnterEvent(self, event):
         over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
@@ -574,6 +588,7 @@ class Window(QMainWindow):
     def clear(self):
         if self.busy(): return
         self.paths.clear(); self.path_set.clear(); self.plans.clear()
+        self.replacements.clear()
         self.session = ScanSession()
         self.packaged_paths.clear(); self.project_errors.clear(); self.project_items.clear(); self.project_states.clear()
         self.project_table.clear()
@@ -585,7 +600,7 @@ class Window(QMainWindow):
         if self.busy(): return
         for path in self.selected_project_paths():
             self.path_set.discard(path)
-            for mapping in (self.plans, self.session.plans, self.project_errors, self.packaged_paths, self.project_states): mapping.pop(path, None)
+            for mapping in (self.plans, self.session.plans, self.project_errors, self.packaged_paths, self.project_states, self.replacements): mapping.pop(path, None)
             item = self.project_items.pop(path)
             self.project_table.takeTopLevelItem(self.project_table.indexOfTopLevelItem(item))
         self.paths = [p for p in self.paths if p in self.path_set]
@@ -606,17 +621,121 @@ class Window(QMainWindow):
     def show_asset_menu(self, point):
         item = self.table.itemAt(point)
         if not item: return
-        self.table.setCurrentItem(item)
+        if not item.isSelected(): self.table.setCurrentItem(item)
         menu = QMenu(self)
         menu.addAction(self.translator('action.copy_path'), self.copy_asset_path)
+        menu.addSeparator()
+        action = menu.addAction(self.translator('relink.manual'), self.choose_asset_file)
+        action.setEnabled(self.relink_file_button.isEnabled())
+        action = menu.addAction(self.translator('relink.find_selected'), lambda: self.find_asset_paths(selected_only=True))
+        action.setEnabled(not self.busy())
+        action = menu.addAction(self.translator('relink.restore'), self.restore_asset_paths)
+        action.setEnabled(self.relink_restore_button.isEnabled())
         menu.exec(self.table.viewport().mapToGlobal(point))
 
+    def selected_dependencies(self):
+        return [item.data(0, Qt.ItemDataRole.UserRole) for item in self.table.selectedItems()]
+
+    def current_plan(self):
+        paths = self.selected_project_paths()
+        cached = self.plans.get(paths[0]) if paths else None
+        return cached[0] if cached else None
+
+    def update_relink_controls(self, *, busy=None):
+        plan = self.current_plan()
+        selected = self.selected_dependencies()
+        enabled = plan is not None and not (self.busy() if busy is None else busy)
+        self.relink_file_button.setEnabled(enabled and len(selected) == 1)
+        self.relink_folder_button.setEnabled(enabled and bool(plan.assets or plan.plugins))
+        self.relink_restore_button.setEnabled(enabled and any(dependency_key(item) in plan.replacements for item in selected))
+
+    def choose_asset_file(self):
+        if self.busy(): return
+        selected = self.selected_dependencies()
+        if len(selected) != 1: return
+        dependency = selected[0]
+        plugin = isinstance(dependency, Plugin)
+        filter_key = 'relink.plugin_filter' if plugin else 'relink.font_filter' if dependency.kind == 'font' else 'relink.file_filter'
+        path, _ = QFileDialog.getOpenFileName(self, self.translator('relink.pick_file'),
+            dependency.source or str(self.current_plan().script.parent), self.translator(filter_key))
+        if not path: return
+        try: replacement = manual_path(dependency, path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, self.translator('relink.pick_file'), self.translator.render(error_message(error)))
+            return
+        choices = dict(self.replacements.get(self.current_plan().script, {}))
+        choices[dependency_key(dependency)] = replacement
+        self.start_relink(choices)
+
+    def find_asset_paths(self, checked=False, *, selected_only=False):
+        if self.busy(): return
+        plan = self.current_plan()
+        if plan is None: return
+        targets = self.selected_dependencies() if selected_only else [*plan.assets, *plan.plugins]
+        if not targets: return
+        folder = QFileDialog.getExistingDirectory(self, self.translator('relink.pick_folder'), str(plan.script.parent))
+        if folder: self.start_relink(dict(plan.replacements), folder=folder, targets=targets)
+
+    def restore_asset_paths(self):
+        if self.busy(): return
+        plan = self.current_plan()
+        if plan is None: return
+        choices = dict(plan.replacements)
+        for dependency in self.selected_dependencies(): choices.pop(dependency_key(dependency), None)
+        self.start_relink(choices)
+
+    def start_relink(self, choices, *, folder=None, targets=None, plan=None):
+        if self.busy(): return
+        plan = plan or self.current_plan()
+        if plan is None or (folder is None and choices == plan.replacements): return
+        self.relink_selection = {dependency_key(item) for item in self.selected_dependencies()}
+        self.settings_writer.pause()
+        self.worker = RelinkWorker(plan, self.events, self.session, choices, folder=folder, targets=targets,
+                                   before_run=self.settings_writer.wait_idle)
+        self.set_busy_controls(True)
+        self.progress.set_tasks(0, 0)
+        self.bind(self.progress_text, 'setText', msg('relink.searching' if folder else 'relink.applying'))
+        self.worker.start()
+
+    def relink_finished(self, worker):
+        worker.join()
+        self.worker = None
+        self.settings_writer.resume()
+        self.set_busy_controls(False)
+        self.progress.finish()
+        self.bind(self.progress_text, 'setText', msg('status.ready'))
+        if worker.cancelled.is_set() or self.closing:
+            self.bind(self.progress_text, 'setText', msg('status.cancelled'))
+            self.append_log(msg('relink.cancelled'), 'warning')
+        elif worker.error:
+            self.bind(self.progress_text, 'setText', msg('status.failed'))
+            self.append_log(msg('relink.failed', error=error_message(worker.error)), 'error')
+        elif worker.folder is not None:
+            dialog = RelinkDialog(self, worker.targets, *worker.result, project_name=worker.plan.script.name)
+            try:
+                if dialog.exec() == RelinkDialog.DialogCode.Accepted:
+                    choices = dict(worker.choices)
+                    choices.update(dialog.choices())
+                    self.start_relink(choices, plan=worker.plan)
+            finally: dialog.deleteLater()
+        else:
+            plan, size = worker.result
+            changed = sum(worker.plan.replacements.get(key) != worker.choices.get(key)
+                          for key in worker.plan.replacements.keys() | worker.choices.keys())
+            if worker.choices: self.replacements[plan.script] = dict(worker.choices)
+            else: self.replacements.pop(plan.script, None)
+            self.project_errors.pop(plan.script, None)
+            self.show_plan(plan, size)
+            if self.selected_project_paths()[:1] == [plan.script]:
+                for index in range(self.table.topLevelItemCount()):
+                    item = self.table.topLevelItem(index)
+                    if dependency_key(item.data(0, Qt.ItemDataRole.UserRole)) in self.relink_selection: item.setSelected(True)
+            self.append_log(msg('relink.applied', count=changed, name=plan.script.name), 'success')
+
     def copy_asset_path(self):
-        selected = self.table.selectedItems()
-        asset = selected[0].data(0, Qt.ItemDataRole.UserRole) if selected else None
-        if asset:
-            value = asset.source or ('\n'.join(asset.candidates) if isinstance(asset, Plugin) else asset.raw)
-            if value: QApplication.clipboard().setText(value)
+        values = [asset.source or ('\n'.join(asset.candidates) if isinstance(asset, Plugin) else asset.raw)
+                  for asset in self.selected_dependencies()]
+        if any(values): QApplication.clipboard().setText('\n'.join(dict.fromkeys(value for value in values if value)))
 
     def packaged(self, path, target):
         self.packaged_paths[path] = Path(target)
@@ -664,7 +783,7 @@ class Window(QMainWindow):
         self.set_busy_controls(True)
         self.settings_writer.pause()
         self.worker = Worker(self.paths.copy(), output, self.events, self.session, self.translator.language,
-                             before_run=self.settings_writer.wait_idle)
+                             before_run=self.settings_writer.wait_idle, replacements=self.replacements)
         self.worker.start()
 
     def poll_events(self):
@@ -672,14 +791,15 @@ class Window(QMainWindow):
         handlers = {'message': self.append_log, 'scanned': self.show_plan, 'progress': self.show_progress,
                     'finished': self.finished, 'project': self.show_project, 'project_done': self.project_done,
                     'project_state': self.set_project_state, 'discovered': self.discovered,
-                    'discovery_finished': self.discovery_finished, 'packaged': self.packaged}
+                    'discovery_finished': self.discovery_finished, 'packaged': self.packaged,
+                    'relink_finished': self.relink_finished}
         deadline = time.monotonic() + 0.012
         for _ in range(200):
             try: kind, values = self.events.get_nowait()
             except Empty: break
             try: handlers[kind](*values)
             except Exception as error: self.append_log(msg('error.ui_update', error=error_message(error)), 'error')
-            if kind in {'finished', 'discovery_finished'}:
+            if kind in {'finished', 'discovery_finished', 'relink_finished'}:
                 if self.closing: self.close()
                 break
             if time.monotonic() >= deadline: break
@@ -715,7 +835,7 @@ class Window(QMainWindow):
                 external = plugin and status_code(asset.status) == 'external'
                 if self.only_issues.isChecked() and (ready or external): continue
                 values = ([asset.name, msg('kind.plugin'), asset.source or '；'.join(asset.candidates), '1' if asset.source else '0'] if plugin
-                          else [asset.node, msg('kind.font') if asset.kind == 'font' else msg('kind.media'), asset.raw, str(len(asset.files))])
+                          else [asset.node, msg('kind.font') if asset.kind == 'font' else msg('kind.media'), asset.replacement or asset.raw, str(len(asset.files))])
                 item = QTreeWidgetItem(self.translator.render(values) + ['√' if ready else '—' if external else '×'])
                 item.setData(0, Qt.ItemDataRole.UserRole, asset)
                 for column in (1, 3, 4): item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
@@ -729,6 +849,7 @@ class Window(QMainWindow):
         self.show_item_status()
 
     def show_item_status(self, event=None):
+        self.update_relink_controls()
         selection = self.selected_project_paths()
         if not selection:
             lines = [(msg('hint.select_project'), 'info'), (msg('hint.select_asset'), 'info')]
@@ -797,6 +918,9 @@ class Window(QMainWindow):
                 lines.append((msg('detail.search_paths', count=len(plan.search_paths)), 'info'))
                 lines.extend((warning, 'warning') for warning in plan.warnings)
                 lines.append((msg('detail.project', path=path), 'info'))
+        if selection:
+            for dependency in self.selected_dependencies():
+                if dependency.replacement: lines.append((msg('relink.detail', path=dependency.replacement), 'success'))
         self.write_lines(self.dependencies, lines)
 
     def show_project(self, index, total, name):
