@@ -22,3 +22,6 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Portable local preferences
+/settings/

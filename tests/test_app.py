@@ -29,7 +29,8 @@ class WindowTests(unittest.TestCase):
         self.source = self.folder / '中文 shot.nk'
         (self.folder / 'plate.exr').write_bytes(b'pixels')
         self.source.write_text('Read {\n file plate.exr\n name Plate\n}\n', encoding='utf-8')
-        self.window = Window()
+        self.settings_path = self.folder / 'settings' / 'wrapitupiso_settings.json'
+        self.window = Window(settings_path=self.settings_path, system_language='zh_CN')
         self.window.show()
         self.qt.processEvents()
         defaults = patch('gizmo.default_paths', return_value=[])
@@ -79,6 +80,108 @@ class WindowTests(unittest.TestCase):
                           Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
         QApplication.sendEvent(widget, event)
         return event.isAccepted()
+
+    def test_language_switch_retranslates_existing_results_and_logs(self):
+        self.add_scan()
+        original_plan = self.window.plans[self.source][0]
+        self.window.set_language('en')
+        self.assertEqual(self.window.scan_button.text(), 'Scan Dependencies')
+        self.assertEqual(self.window.table.headerItem().text(0), 'Node')
+        self.assertEqual(self.window.project_items[self.source].text(1), 'Scanned')
+        self.assertIn('Scan complete', self.log())
+        self.assertNotIn('扫描', self.log())
+        self.assertIn('Explicit Gizmo dependencies checked', self.window.dependencies.toPlainText())
+        self.assertIs(self.window.plans[self.source][0], original_plan)
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.window.set_language('ja')
+        self.assertEqual(self.window.scan_button.text(), '依存関係をスキャン')
+        self.assertIn('素材の状態', self.window.dependencies.toPlainText())
+        self.pack()
+        target = self.window.packaged_paths[self.source]
+        self.assertIn('# パッケージ化の結果', (target / 'readme.md').read_text(encoding='utf-8'))
+        report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(report['assets'][0]['status'], '就绪')
+        self.assertEqual(report['language'], 'ja')
+        self.assertEqual(json.loads(self.settings_path.read_text(encoding='utf-8'))['language'], 'ja')
+
+    def test_english_dependency_reasons_preserve_user_filenames(self):
+        self.source.write_text('Read {\n file [value root.test]\n name Dynamic\n}\nMissingTool {\n}\n', encoding='utf-8')
+        self.window.set_language('en')
+        self.add_scan()
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(0))
+        self.assertIn('Dynamic expression was not executed', self.window.dependencies.toPlainText())
+        self.window.table.setCurrentItem(self.window.table.topLevelItem(1))
+        self.assertIn('No matching file found', self.window.dependencies.toPlainText())
+        self.pack()
+        self.assertIn('Packaging complete', self.log())
+        self.assertIn(self.source.name, self.log())
+        self.assertNotIn('跳过', self.log())
+
+    def test_settings_restore_layout_language_paths_and_filter(self):
+        self.window.resize(1150, 740)
+        self.window.panes.setSizes([410, 700])
+        self.window.table.setColumnWidth(0, 180)
+        self.window.only_issues.setChecked(True)
+        self.window.output_entry.setText(str(self.folder / 'output'))
+        self.window.last_project_directory = self.folder
+        self.window.set_language('en')
+        self.window.close()
+        saved = json.loads(self.settings_path.read_text(encoding='utf-8'))
+        restored = Window(settings_path=self.settings_path, system_language='ja')
+        try:
+            restored.show()
+            self.qt.processEvents()
+            self.assertEqual(restored.scan_button.text(), 'Scan Dependencies')
+            self.assertEqual(restored.size(), self.window.size())
+            self.assertTrue(restored.only_issues.isChecked())
+            self.assertEqual(restored.output_entry.text(), str(self.folder / 'output'))
+            self.assertEqual(restored.last_project_directory, self.folder)
+            self.assertEqual(restored.table.columnWidth(0), 180)
+            self.assertLess(abs(restored.panes.sizes()[0] - saved['layout']['panes'][0]), 8)
+            self.assertFalse(restored.paths)
+        finally:
+            restored.close()
+            restored.deleteLater()
+
+    def test_window_position_does_not_drift_across_restarts(self):
+        self.window.move(100, 100)
+        self.qt.processEvents()
+        expected = self.window.pos()
+        self.window.close()
+        for _ in range(2):
+            restored = Window(settings_path=self.settings_path, system_language='en')
+            restored.show()
+            self.qt.processEvents()
+            try:
+                self.assertEqual(restored.pos(), expected)
+            finally:
+                restored.close()
+                restored.deleteLater()
+
+    def test_small_layout_each_language(self):
+        self.window.resize(900, 620)
+        for language in ('zh-CN', 'en', 'ja'):
+            self.window.set_language(language)
+            self.qt.processEvents()
+            self.assertGreater(self.window.table.viewport().width(), 200)
+            self.assertLessEqual(self.window.pack_button.mapTo(self.window, self.window.pack_button.rect().bottomRight()).x(), self.window.width())
+
+    def test_busy_rejects_language_switch(self):
+        blocker = threading.Event()
+        original = app.scan
+        def slow_scan(*args, **kwargs):
+            blocker.wait(2)
+            return original(*args, **kwargs)
+        self.window.add([self.source])
+        self.wait_finished()
+        with patch('app.scan', side_effect=slow_scan):
+            self.window.scan_only()
+            self.assertFalse(self.window.language_menu.isEnabled())
+            self.window.set_language('ja')
+            self.assertEqual(self.window.translator.language, 'zh-CN')
+            blocker.set()
+            self.wait_finished()
+        self.assertTrue(self.window.language_menu.isEnabled())
 
     def test_native_qt_window_and_small_layout(self):
         self.assertIsInstance(self.window, QMainWindow)

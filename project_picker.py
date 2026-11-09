@@ -3,6 +3,7 @@
 COM slots/signatures follow the Windows SDK IFileOpenDialog,
 IFileDialogCustomize and IFileDialog(Control)Events declarations.
 """
+from i18n import message as msg, error_message, Translator
 import ctypes as C
 from pathlib import Path
 from uuid import UUID
@@ -30,7 +31,7 @@ CANCELLED = 0x800704C7
 
 def check(result):
     if result < 0:
-        raise OSError(f'Windows 文件选择器错误：0x{result & 0xffffffff:08X}')
+        raise OSError(msg('picker.windows_error', code=result & 4294967295))
     return result
 
 
@@ -50,14 +51,15 @@ def valid_projects(paths):
     selected = [Path(path) for path in paths]
     for path in selected:
         if not (path.is_dir() or (path.is_file() and path.suffix.lower() == '.nk')):
-            raise ValueError(f'请选择有效的文件夹或 .nk 工程：\n{path}')
+            raise ValueError(msg('picker.invalid_selection', path=path))
     return selected
 
 
-def show_native_error(owner, error):
+def show_native_error(owner, error, language='zh-CN'):
     user = C.WinDLL('user32')
     user.MessageBoxW.argtypes = [P, W, W, U]
-    user.MessageBoxW(owner, str(error), '无法添加所选项目', 0x10)
+    translator = Translator(language)
+    user.MessageBoxW(owner, translator.render(error_message(error)), translator('picker.add_error'), 16)
 
 
 class DialogEvents:
@@ -124,7 +126,7 @@ class DialogEvents:
                 self.owner.close(0)
         except Exception as error:
             # Exceptions must never escape a ctypes callback into COM.
-            show_native_error(self.owner.hwnd, error)
+            show_native_error(self.owner.hwnd, error, getattr(self.owner, 'language', 'zh-CN'))
         return 0
 
 
@@ -133,7 +135,9 @@ class FilterSpec(C.Structure):
 
 
 class NativeProjectDialog:
-    def __init__(self, initialdir):
+    def __init__(self, initialdir, language='zh-CN'):
+        self.language = language
+        self.translator = Translator(language)
         self.initialdir = Path(initialdir)
         self.dialog = P()
         self.customize = P()
@@ -167,15 +171,14 @@ class NativeProjectDialog:
             check(self.call(10, [C.POINTER(U)], C.byref(options)))
             # filesystem + multi-select + existing paths/files + unchanged cwd
             check(self.call(9, [U], options.value | 0x40 | 0x200 | 0x800 | 0x1000 | 0x8))
-            filters = (FilterSpec * 1)(FilterSpec('Nuke 工程 (*.nk)', '*.nk'))
+            filters = (FilterSpec * 1)(FilterSpec(self.translator('picker.file_filter'), '*.nk'))
             check(self.call(4, [U, C.POINTER(FilterSpec)], 1, filters))
-            check(self.call(17, [W], '添加工程：选择文件夹或 .nk'))
-            check(self.call(18, [W], '打开'))
+            check(self.call(17, [W], self.translator('picker.title')))
+            check(self.call(18, [W], self.translator('action.open')))
             self.set_initial_directory()
             check(self.call(0, [P, PP], C.byref(CUSTOMIZE), C.byref(self.customize)))
-            check(invoke(self.customize, 11, [U, W], 1002,
-                         'Ctrl / Shift 多选文件夹或 .nk，然后点击“添加选中项”。'))
-            check(invoke(self.customize, 5, [U, W], ADD_SELECTION, '添加选中项'))
+            check(invoke(self.customize, 11, [U, W], 1002, self.translator('picker.instructions')))
+            check(invoke(self.customize, 5, [U, W], ADD_SELECTION, self.translator('picker.add_selected')))
             check(invoke(self.customize, 28, [U], ADD_SELECTION))
             self.events = DialogEvents(self)
             check(self.call(7, [P, C.POINTER(U)], C.byref(self.events.events[1]), C.byref(self.cookie)))
@@ -247,5 +250,5 @@ def ask_projects(parent, initialdir):
     user.GetAncestor.argtypes = [P, U]
     user.GetAncestor.restype = P
     hwnd = user.GetAncestor(int(parent.winId()), 2)
-    with NativeProjectDialog(initialdir) as dialog:
+    with NativeProjectDialog(initialdir, language=parent.translator.language) as dialog:
         return dialog.show(hwnd)

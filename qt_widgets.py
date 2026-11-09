@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QAbstractItemView, QFrame, QHBoxLayout, QLabel, QL
 COLORS = {'info': '#c7c7c7', 'success': '#91bd87', 'warning': '#e2ab59', 'error': '#ec8980'}
 
 STYLE = '''
-QWidget { color: #c8c8c8; font-family: "Microsoft YaHei UI"; font-size: 12px; }
+QWidget { color: #c8c8c8; font-size: 12px; }
 QMainWindow, QWidget#central { background: #303030; }
 QMenuBar { background: #292929; border-bottom: 1px solid #1f1f1f; }
 QMenuBar::item { padding: 5px 12px; background: transparent; }
@@ -137,6 +137,14 @@ class FileTree(QTreeWidget):
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+    def setEmptyTitle(self, text):
+        self.empty_title = text
+        self.viewport().update()
+
+    def setEmptyHint(self, text):
+        self.empty_hint = text
+        self.viewport().update()
 
     def dragEnterEvent(self, event):
         if self.can_drop() and local_paths(event.mimeData()): event.acceptProposedAction()
