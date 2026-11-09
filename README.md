@@ -6,15 +6,17 @@
 
 支持批量处理 `.nk` 工程，自动收集素材、改写路径并生成交付清单。打包时无需安装或启动 Nuke，也不会修改源工程。
 
-Qt6 桌面界面采用 Nuke 风格的深灰面板与橙色高亮，支持拖放、可调整分栏和后台批量处理。
+Qt6 桌面界面采用 Nuke 风格的深灰面板与橙色高亮，支持拖放、可调整分栏和后台批量处理。内置简体中文、English、日本語，语言和布局会自动记忆。
 
 **[下载 Windows 版](https://github.com/AmazingiKe/Warp-Up-ISO/releases/latest)** · [查看所有版本](https://github.com/AmazingiKe/Warp-Up-ISO/releases) · [详细说明](docs/reference.md)
 
 ![WrapItUpISO 界面预览：批量工程列表、素材与插件检查、打包进度和日志](docs/images/wrapitupiso-preview.png)
 
+[English 界面预览](docs/images/wrapitupiso-en.png) · [日本語 界面预览](docs/images/wrapitupiso-ja.png)
+
 ## 开始使用
 
-从 Releases 的 **Assets** 下载 `WrapItUpISO 1.1.30.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
+从 Releases 的 **Assets** 下载 `WrapItUpISO 1.1.31.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
 
 1. **添加工程**：拖入 `.nk` 文件或文件夹，也可以点击 `+` 多选添加。
 2. **扫描依赖**：点击放大镜，检查素材与插件状态；有问题时点击条目查看原因。
