@@ -11,6 +11,10 @@ __pycache__/
 # Build outputs
 build/
 dist/
+/tools/reports/*
+!/tools/reports/README.md
+/tools/archive/*
+!/tools/archive/README.md
 *.egg-info/
 
 # Local agent settings

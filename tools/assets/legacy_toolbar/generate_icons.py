@@ -1,8 +1,8 @@
-"""Regenerate toolbar PNG assets. Development only; requires Pillow."""
+"""Regenerate archived Tk toolbar PNGs; unused by the current Qt interface."""
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parents[1] / 'assets' / 'toolbar'
+OUT = Path(__file__).resolve().parent / 'icons'
 SCALE = 4
 
 def render(name, color):
