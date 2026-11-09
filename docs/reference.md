@@ -6,7 +6,7 @@
 
 ## Windows 启动
 
-1. 双击 `tools/dist/WrapItUpISO 1.1.31.exe`。这是单文件发布版，已内置 Python 运行时、Qt6 和全部界面依赖，目标电脑无需安装 Python 或 Python Launcher。
+1. 双击 `tools/dist/WrapItUpISO 1.1.32.exe`。这是单文件发布版，已内置 Python 运行时、Qt6 和全部界面依赖，目标电脑无需安装 Python 或 Python Launcher。
 2. 点击左侧工程列表上方的 `+`，打开 Windows 原生文件选择器。支持 Ctrl / Shift 多选文件夹、`.nk` 工程，也可混选，点击“添加选中项”加入列表。双击文件夹进入目录；仅选择 `.nk` 时也可点击“打开”。文件夹会递归查找 `.nk`，没有工程时在日志提示，重复工程不会重复添加。仍支持直接拖入文件或文件夹。
 3. 点击工具栏的放大镜图标“扫描素材与插件”。左侧选择工程，右侧分别列出素材和 Gizmo / 插件条目，点击条目查看来源与问题。左右分栏宽度可拖动调整。
 4. 将一个文件夹拖到“输出目录”输入框，自动使用该路径；也可点击文件夹图标选择目录。点击三角形图标“开始打包”。拖到其他区域的文件夹仍用于添加工程。
@@ -19,7 +19,7 @@
 
 重新扫描、取消或再次打包失败时，仍可打开该工程上一次成功打包的目录和 README；下一次成功打包后入口更新到新目录。移除工程或清空列表时清除对应记录。
 
-分发时只需复制 `WrapItUpISO 1.1.31.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
+分发时只需复制 `WrapItUpISO 1.1.32.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
 
 扫描和复制在后台线程执行，窗口保持可操作。连续双色进度条中，深色代表已处理工程，浅色紧接深色，代表当前工程在当前阶段的任务进度；不绘制工程分隔线，进度变化采用短暂平滑过渡。上方保留工程数量，下方显示任务数、百分比和正在处理的文件；复制阶段按文件数计任务，大文件内部仍按复制量平滑更新。任务数量尚未确定时，浅色部分贴着深色边缘缓慢伸缩。点击“取消”会清理当前未完成工程，保留已完成结果。
 
@@ -71,12 +71,12 @@ python app.py
 
 ```powershell
 python -m pip install -r tools/requirements-build.txt
-python tools/prepare_app_icons.py
+python tools/assets/prepare_app_icons.py
 python -m PyInstaller --workpath tools/build --distpath tools/dist tools/WrapItUpISO.spec
 ```
 
-生成的程序为 `tools/dist/WrapItUpISO 1.1.31.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
-窗口、任务栏和 EXE 使用 `assets/Icon/nuke logo.png` 转换的圆形图标；工具栏使用同目录中的横版 Logo。图标资源随 EXE 内置，替换源图片后运行 `prepare_app_icons.py` 再构建即可更新。
+生成的程序为 `tools/dist/WrapItUpISO 1.1.32.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
+窗口、任务栏和 EXE 使用 `wrapitupiso/resources/icons/nuke logo.png` 转换的圆形图标；工具栏使用同目录中的横版 Logo。图标资源随 EXE 内置，替换源图片后运行 `prepare_app_icons.py` 再构建即可更新。
 界面使用 Qt6 / PySide6，文件拖放由 Qt 原生处理；EXE 内置 Qt 库与 Windows 平台插件，不需要额外安装 Qt。
 
 ## 语言与便携设置
@@ -109,7 +109,7 @@ python -m PyInstaller --workpath tools/build --distpath tools/dist tools/WrapItU
 
 设置更改后自动保存，关闭时再次保存。“帮助 → 打开设置目录”可定位文件；手动编辑前请先关闭程序，避免被当前窗口状态覆盖。窗口移到已断开的显示器外时，启动会把它恢复到可见屏幕。无效字段使用默认值；损坏的 JSON 会备份为 `wrapitupiso_settings.invalid-时间戳.json` 后重建。无法写入时在日志提示，本次仍可运行，但不能记住更改。未知的较新设置格式保持原文件，不覆盖。
 
-翻译统一保存在 `locales/translations.json`，结构为 `固定键 → zh-CN / en / ja → 文案`。动态值使用 `{count}`、`{filename}` 等命名占位符，各语言的占位符必须一致。文件路径等用户数据作为参数传入，不会被当作翻译键。构建时检查字典完整性，并把字典嵌入 EXE；修改源码字典后需重新构建发布版。
+翻译统一保存在 `wrapitupiso/resources/locales/translations.json`，结构为 `固定键 → zh-CN / en / ja → 文案`。动态值使用 `{count}`、`{filename}` 等命名占位符，各语言的占位符必须一致。文件路径等用户数据作为参数传入，不会被当作翻译键。构建时检查字典完整性，并把字典嵌入 EXE；修改源码字典后需重新构建发布版。
 
 ## 收集规则
 
@@ -157,21 +157,43 @@ python cli.py "D:/shots/shot01.nk" --output "E:/delivery"
 
 ## 开发与验证
 
-- `app.py`：Qt6 主窗口；后台线程执行扫描和复制，通过队列和 Qt 定时器交由主线程更新界面。
-- `qt_widgets.py`：Nuke 风格深灰主题、原生拖放控件和连续双色进度条。
-- `i18n.py` / `locales/translations.json`：三语字典、命名参数与可重新翻译的消息；状态判断使用固定标识。
-- `settings.py`：软件专属 JSON 设置、字段校验、原子保存和损坏文件备份。
-- `project_picker.py`：Windows 原生文件选择器，支持文件夹与 `.nk` 混合多选。
-- `plugin_paths.py`：静态解析启动配置，自动发现插件目录，不执行原配置代码。
-- `core.py`：工程解析、素材收集与路径重写。
-- `media_scan.py`：单次扫描共享目录与匹配结果，处理帧号填充及取消。
-- `scan_cache.py`：扫描结果、插件索引复用与变更检查。
-- `gizmo.py`：插件索引、依赖递归、冲突检查、交付文件校验。
-- `script_scan.py`：静态检查 Tcl 命令、间接加载与未经验证的控制结构。
-- `cli.py`：命令行入口。
-- `version.json`：程序名称与版本的唯一配置，窗口标题、`python cli.py --version`、EXE 文件名及 Windows 文件属性、交付说明和报告共用；修改后重新构建 EXE 即可同步。
-- `tests/`：核心测试与 Qt 窗口流程测试，不参与程序运行。
-- `tools/`：EXE 打包配置、构建依赖、构建缓存与输出。
+源码按职责放在 `wrapitupiso/`，根目录只保留启动入口和项目配置：
+
+```text
+NukeBatchPackager/
+├── app.py                      GUI 启动入口
+├── cli.py                      命令行启动入口（仅标准库）
+├── version.json                名称与版本的唯一配置
+├── requirements.txt            运行依赖
+├── wrapitupiso/
+│   ├── cli.py                  命令行实现
+│   ├── ui/
+│   │   ├── window.py           Qt6 主窗口和交互
+│   │   ├── workers.py          后台扫描、打包与进度事件
+│   │   ├── widgets.py          主题、拖放控件、进度条
+│   │   └── project_picker.py   Windows 原生选择器
+│   ├── engine/                 工程解析、依赖扫描、缓存和打包
+│   ├── config/                 设置、翻译、版本与统一路径
+│   └── resources/
+│       ├── icons/              Logo 和窗口图标
+│       └── locales/            中英日 JSON 字典
+├── tests/                      核心、设置、入口与窗口测试
+├── docs/                       说明文档和预览图片
+├── tools/                      构建配置与开发工具
+│   ├── assets/                 图标生成工具与旧资源留档
+│   ├── verify/                 Nuke 验证与性能工具
+│   ├── build/                  当前构建缓存
+│   ├── dist/                   当前单文件 EXE
+│   ├── reports/                本地验证结果
+│   └── archive/                历史构建和实验文件
+└── settings/                   本机设置，首次启动自动创建
+```
+
+`engine/` 不依赖 Qt：`core.py` 负责工程解析、素材收集与路径重写；`gizmo.py` 处理插件索引与依赖；`plugin_paths.py` 静态发现插件目录；`media_scan.py`、`font_scan.py`、`callback_scan.py`、`script_scan.py` 分别检查素材、字体、回调与 Tcl 命令；`scan_cache.py` 复用扫描结果；`project_discovery.py` 搜索工程；`delivery.py` 和 `package_readme.py` 生成交付内容。
+
+`config/paths.py` 统一定位内置资源与程序目录，启动工作目录不影响资源读取。`config/settings.py` 保持设置在程序旁边，`config/i18n.py` 读取三语字典。`ui/workers.py` 通过队列向 `ui/window.py` 发送事件，由 Qt 定时器更新界面。
+
+`version.json` 仍由窗口标题、`python cli.py --version`、EXE 文件名及 Windows 文件属性、交付说明和报告共用。生成的设置、缓存、发布包、报告和历史归档均不进入 Git。开发工具的具体用途见 [tools/README.md](../tools/README.md)。
 
 在项目根目录执行：
 
@@ -184,10 +206,10 @@ python -m unittest discover -s tests -v
 已使用 Nuke 15.1v5 验证生成的嵌套 Gizmo 测试工程：移除原插件与素材，移动交付目录到中文路径，按交付说明手动注册 Gizmo 后用 Nuke 打开并校验像素值，同时验证绝对路径 Gizmo 引用的迁移、Group 自定义 File 参数的类型和迁移后的路径。验证工具只运行生成的测试探针，探针不写入交付包。可复现的验证命令（需要本机 Nuke 和有效许可，仅运行生成的测试工程）：
 
 ```powershell
-python tools/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
-python tools/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe" --gui
-python tools/verify_scan_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
-python tools/verify_delivery_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
+python tools/verify/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
+python tools/verify/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe" --gui
+python tools/verify/verify_scan_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
+python tools/verify/verify_delivery_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe"
 ```
 
 这不替代对实际生产工程的 Nuke 加载和渲染验收。
