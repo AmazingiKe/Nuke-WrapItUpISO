@@ -42,8 +42,8 @@ class GizmoPathReferenceTests(unittest.TestCase):
         record = report['plugins'][0]
         packed = target / record['packed_path']
         self.assertIn('label exact', packed.read_text())
-        self.assertEqual(list(node_blocks((target / self.script.name).read_text()))[0][0], packed.stem)
-        self.assertNotIn(exact.as_posix(), (target / self.script.name).read_text())
+        self.assertEqual(list(node_blocks((target / (self.script.stem + '_Relinked_relative.nk')).read_text()))[0][0], packed.stem)
+        self.assertNotIn(exact.as_posix(), (target / (self.script.stem + '_Relinked_relative.nk')).read_text())
         self.assertEqual((target / report['original_path_script']).read_bytes(), original)
         self.assertEqual(self.script.read_bytes(), original)
         self.assertEqual(record['original_reference'], exact.as_posix())
@@ -68,9 +68,12 @@ class GizmoPathReferenceTests(unittest.TestCase):
         self.script.write_text(self.reference(a, 'A') + self.reference(b, 'B'))
         target = package(scan(self.script, automatic_plugins=True), self.root / 'distinct')
         files = list((target / 'gizmos').glob('*.gizmo'))
-        self.assertEqual(len(files), 2)
-        self.assertEqual(len({p.stem.casefold() for p in files}), 2)
-        self.assertEqual({cls for cls, _, _ in node_blocks((target / self.script.name).read_text())}, {p.stem for p in files})
+        self.assertEqual(len(files), 4)
+        self.assertEqual(len({p.stem.casefold() for p in files}), 4)
+        report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+        for script_key, class_key in (('relative_script', 'packed_class'), ('relinked_script', 'absolute_packed_class')):
+            self.assertEqual({cls for cls, _, _ in node_blocks((target / report[script_key]).read_text())},
+                             {p[class_key] for p in report['plugins']})
 
     def test_missing_explicit_path_is_reported_without_guessing_same_named_file(self):
         missing = self.root / 'absent/Glow.gizmo'
@@ -81,7 +84,7 @@ class GizmoPathReferenceTests(unittest.TestCase):
         self.assertEqual(plan.plugins[0].status, '未找到')
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'missing')
-        self.assertEqual((target / self.script.name).read_bytes(), self.script.read_bytes())
+        self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), self.script.read_bytes())
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertFalse(report['gizmo_dependencies_complete'])
         self.assertEqual(report['plugins'][0]['status'], '未收集')
@@ -95,10 +98,12 @@ class GizmoPathReferenceTests(unittest.TestCase):
         plan = scan(self.script, automatic_plugins=True)
         self.assertEqual(len(plan.assets), 1)
         target = package(plan, self.root / 'alias')
-        files = list((target / 'gizmos').glob('*.gizmo'))
-        self.assertEqual(len(files), 2)
-        self.assertEqual(files[0].read_bytes(), files[1].read_bytes())
-        self.assertEqual(files[0].read_text().count('[file dirname'), 1)
+        report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
+        for field in ('packed_path', 'absolute_packed_path'):
+            files = [target / p[field] for p in report['plugins']]
+            self.assertEqual(len(files), 2)
+            self.assertEqual(files[0].read_bytes(), files[1].read_bytes())
+            self.assertEqual(files[0].read_text().count('[file dirname'), 1 if field == 'packed_path' else 0)
 
     def test_explicit_path_changes_invalidate_scan_and_delivery(self):
         source = self.root / 'external/Glow.gizmo'

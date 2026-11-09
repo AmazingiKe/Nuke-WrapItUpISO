@@ -31,7 +31,7 @@ class DependencyAuditTests(unittest.TestCase):
         self.assertEqual(plan.assets[0].node_path, 'Outer_Embedded')
         target = package(plan, self.root / 'output')
         self.assertEqual((target / 'media/Outer_Embedded/texture.exr').read_bytes(), b'pixels')
-        text = (target / self.script.name).read_text()
+        text = (target / (self.script.stem + '_Relinked_relative.nk')).read_text()
         self.assertIn('texture "[file dirname [value root.name]]/media/', text)
         self.assertIn('texture plain_text', text)
         media.unlink()

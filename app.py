@@ -755,7 +755,7 @@ class Window(TkinterDnD.Tk):
                 for asset in plan.assets:
                     if self.only_issues.get() and asset.status == '就绪': continue
                     row = self.table.insert('', 'end', values=(
-                        asset.node, '素材', asset.raw, len(asset.files), '√' if asset.status == '就绪' else '×',
+                        asset.node, '字体' if asset.kind == 'font' else '素材', asset.raw, len(asset.files), '√' if asset.status == '就绪' else '×',
                     ))
                     self.asset_rows[row] = asset
                 for plugin in plan.plugins:

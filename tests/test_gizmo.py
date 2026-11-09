@@ -46,13 +46,18 @@ class GizmoTests(unittest.TestCase):
         self.assertTrue(all(p.status == '就绪' for p in plan.plugins))
         self.assertEqual(len(plan.assets), 1)
         destination = package(plan, self.root / 'output')
-        self.assertEqual(len(list((destination / 'gizmos').glob('*.gizmo'))), 2)
+        self.assertEqual(len(list((destination / 'gizmos').glob('*.gizmo'))), 4)
         self.assertIn('[file dirname [value root.name]]/media/', (destination / 'gizmos/Inner.gizmo').read_text())
         self.assertEqual(next((destination / 'media').rglob('*.exr')).read_bytes(), b'pixels')
         self.assertEqual((destination / 'media/Inner_texture/texture.exr').read_bytes(), b'pixels')
         report = json.loads((destination / 'report.json').read_text(encoding='utf-8'))
         self.assertTrue(report['gizmo_dependencies_complete'])
         self.assertEqual(len(report['plugins']), 2)
+        for plugin in report['plugins']:
+            absolute = (destination / plugin['absolute_packed_path']).read_text()
+            self.assertNotIn('[file dirname', absolute)
+            self.assertIn(plugin['absolute_packed_class'], (destination / report['relinked_script']).read_text()
+                          + (destination / 'gizmos/Outer_Relinked.gizmo').read_text())
         self.assertFalse((destination / '打开工程.cmd').exists())
         self.assertFalse((destination / 'load_package.py').exists())
         for relative, digest in report['file_hashes'].items():
@@ -133,7 +138,7 @@ class GizmoTests(unittest.TestCase):
         plan = self.scan()
         self.assertEqual({a.source for a in plan.assets}, {str(default), str(override)})
         target = package(plan, self.root / 'custom')
-        self.assertIn('/media/', (target / self.script.name).read_text())
+        self.assertIn('/media/', (target / (self.script.stem + '_Relinked_relative.nk')).read_text())
         self.assertIn('/media/', (target / 'gizmos/Outer.gizmo').read_text())
         self.assertEqual({p.read_bytes() for p in (target / 'media').rglob('*.exr')}, {b'default', b'override'})
         override.unlink()
@@ -204,10 +209,10 @@ class GizmoTests(unittest.TestCase):
         self.gizmo('Outer')
         plan = self.scan()
         from gizmo import finish_bundle
-        def corrupt(plan, stage, edits, hashes, cancel, verify_progress=None):
+        def corrupt(plan, stage, edits, hashes, cancel, verify_progress=None, **kwargs):
             (stage / 'bad.exr').write_bytes(b'wrong')
             hashes['bad.exr'] = hashlib.sha256(b'expected').hexdigest()
-            return finish_bundle(plan, stage, edits, hashes, cancel)
+            return finish_bundle(plan, stage, edits, hashes, cancel, **kwargs)
         with patch('gizmo.finish_bundle', side_effect=corrupt):
             with self.assertRaisesRegex(RuntimeError, '校验失败'):
                 package(plan, self.root / 'corrupt')
@@ -319,8 +324,8 @@ class GizmoTests(unittest.TestCase):
             self.scan(cancel=lambda: stop, progress=progress)
         plan = self.scan()
         from gizmo import finish_bundle
-        def cancel_at_write(plan, stage, edits, hashes, cancel, verify_progress=None):
-            return finish_bundle(plan, stage, edits, hashes, lambda: True)
+        def cancel_at_write(plan, stage, edits, hashes, cancel, verify_progress=None, **kwargs):
+            return finish_bundle(plan, stage, edits, hashes, lambda: True, **kwargs)
         with patch('gizmo.finish_bundle', side_effect=cancel_at_write):
             with self.assertRaises(Cancelled):
                 package(plan, self.root / 'cancelled')

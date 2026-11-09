@@ -139,6 +139,8 @@ class Asset:
     owner: str = ''
     node_class: str = ''
     node_path: str = ''
+    kind: str = 'media'
+    font_mode: str = ''
 
 @dataclass
 class Plan:
@@ -216,6 +218,7 @@ def resolve(raw, base):
 
 def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None):
     from media_scan import MediaIndex
+    from font_scan import FONT_EXTENSIONS, font_files
     media_index = media_index or MediaIndex(cancel, snapshot)
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
@@ -238,14 +241,16 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
         if cancel(): raise Cancelled()
         name = k.get('name', Token(cls,0,0)).value
         for key, t in k.items():
-            if key not in PATH_KNOBS | declared | (extra_path_knobs or {}).get(cls, set()) or not t.value: continue
+            if key not in PATH_KNOBS | declared | (extra_path_knobs or {}).get(cls, set()) | ({'font'} if cls == 'Text' else set()) or not t.value: continue
             if cls in {'Write','DeepWrite'}: continue
             if key == 'file' and cls in {'Camera2','Camera3','Axis2','Axis3','ReadGeo','ReadGeo2','ReadGeo3'}:
                 if k.get('read_from_file', Token('false',0,0)).value not in {'true','1'}: continue
             a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls,
-                      node_path='_'.join((*groups, name))); assets.append(a)
+                      node_path='_'.join((*groups, name)), kind='font' if key in {'font', 'font_file'} else 'media'); assets.append(a)
             try:
                 source = resolve(t.value, base).resolve(); a.source = str(source)
+                if key in {'font', 'font_file'} or source.suffix.lower() in FONT_EXTENSIONS:
+                    a.kind = 'font'
                 if snapshot:
                     snapshot.watch(source)
                     snapshot.watch(source.parent)
@@ -260,6 +265,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                         last = int(k.get('last',Token(str(max(numbers)),0,0)).value)
                         if last-first <= 1000000: a.missing = sorted(set(range(first,last+1))-set(numbers))
                     a.note = '收集目录中所有匹配帧'+(f'；声明范围缺 {len(a.missing)} 帧' if a.missing else '')
+                elif a.kind == 'font': a.files = font_files(source, media_index)
                 elif media_index.is_file(source): a.files = [source]
                 a.status = '缺帧' if a.missing else ('就绪' if a.files else '缺失')
                 if snapshot:
@@ -270,6 +276,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
 
 
 def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None):
+    from font_scan import collect_fonts
     from gizmo import scan_dependencies
     from scan_cache import Snapshot
     from media_scan import MediaIndex
@@ -279,6 +286,7 @@ def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_p
     plan.snapshot = snapshot
     plan.automatic_plugins = automatic_plugins
     scan_dependencies(plan, cancel, progress, context=context, media_index=media_index)
+    collect_fonts(plan, cancel, media_index)
     return plan
 
 def media_folders(assets, cancel=lambda: False):
@@ -324,6 +332,8 @@ def media_folders(assets, cancel=lambda: False):
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
     from gizmo import check_sources, finish_bundle, reference_edits
     from package_readme import render_package_readme
+    from delivery import absolute_plugin_names, apply_edits, path_word, project_settings
+    from font_scan import font_destinations
     if plan.plugin_blockers:
         raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
     check_sources(plan, cancel)
@@ -337,11 +347,14 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     # Reserve the final name immediately; the marker guards unfinished packages.
     stage = target
     edits = {owner: reference_edits(text, plan.plugins) for owner, (text, _, _) in plan.documents.items()}
+    aliases = absolute_plugin_names(plan.plugins)
+    absolute_edits = {owner: reference_edits(text, plan.plugins, aliases=aliases) for owner, (text, _, _) in plan.documents.items()}
     copied, rows, hashes = set(), [], {}
     total = 0; done = 0
     try:
         marker = stage/'PACKAGING_INCOMPLETE.txt'
         marker.write_text('打包尚未完成，请勿交付此目录。\n',encoding='utf-8')
+        (stage / 'FONTS').mkdir()
         files = list(plan.media_files(cancel))
         total = len(files)
         copied_bytes = 0
@@ -352,15 +365,16 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                 total_bytes += source_file.stat().st_size
             byte_progress(0, total_bytes, '准备复制')
         folders = media_folders(plan.assets, cancel)
+        font_paths = font_destinations(plan.assets)
         for a, folder in zip(plan.assets, folders):
             if cancel(): raise Cancelled()
-            row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files),'document':a.owner}
+            row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files),'document':a.owner,'kind':a.kind}
             rows.append(row)
             if not a.files: continue
-            dest = stage/'media'/folder; dest.mkdir(parents=True,exist_ok=True)
             for p in a.files:
                 if p in copied: continue
-                destination = dest/p.name
+                destination = stage / font_paths[p] if p in font_paths else stage / 'media' / folder / p.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 succeeded = False
                 try:
                     digest = hashlib.sha256()
@@ -385,19 +399,34 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                 finally:
                     if not succeeded: destination.unlink(missing_ok=True)
                 copied.add(p); done += 1; progress(done,total,p.name)
-            rel = f'media/{folder}/{Path(a.source).name}'
-            # Quoted Tcl word retains command substitution for relocatable script path.
-            new = '"[file dirname [value root.name]]/'+rel+'"'
-            edits.setdefault(a.owner or str(plan.script), []).append((a.start,a.end,new)); row['packed_path'] = rel
-        text = plan.text
-        for start,end,value in sorted(edits.get(str(plan.script), []),reverse=True): text = text[:start]+value+text[end:]
-        with (stage/plan.script.name).open('w',encoding=plan.encoding,newline='') as f: f.write(text)
+            rel = font_paths.get(Path(a.source), f'media/{folder}/{Path(a.source).name}')
+            new, absolute = path_word(rel, relative=True), path_word(stage / rel)
+            if a.font_mode == 'family':
+                new = absolute = Path(rel).name
+            elif a.font_mode == 'default':
+                new = absolute = '\n font {{ Utopia : Regular : ' + Path(rel).name + ' : 0 }}\n'
+            owner = a.owner or str(plan.script)
+            edits.setdefault(owner, []).append((a.start, a.end, new))
+            absolute_edits.setdefault(owner, []).append((a.start, a.end, absolute))
+            row['packed_path'] = rel
+        fonts = any(a.font_mode and a.files for a in plan.assets)
+        relative_name = plan.script.stem + '_Relinked_relative' + plan.script.suffix
+        absolute_name = plan.script.stem + '_Relinked' + plan.script.suffix
+        for relative, name, mapping in ((True, relative_name, edits), (False, absolute_name, absolute_edits)):
+            changes = mapping.get(str(plan.script), []) + project_settings(plan.text, stage, relative=relative, fonts=fonts)
+            (stage / name).write_bytes(apply_edits(plan.text, changes).encode(plan.encoding))
         original_name = plan.script.stem + '_original' + plan.script.suffix
         shutil.copyfile(plan.script, stage/original_name)
         hashes[original_name] = plan.documents[str(plan.script)][2]
-        plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress)
+        plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress, absolute_edits=absolute_edits, aliases=aliases)
         report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         report['original_path_script'] = original_name
+        report['relinked_script'] = absolute_name
+        report['relative_script'] = relative_name
+        report['font_warnings'] = ([
+            'Nuke 15.1v5 的 Text2 字体查找在含中文等非 ASCII 字符的路径下可能失败；请使用英文交付路径和字体文件名。',
+            '在 Nuke 中另存工程后，Text2 字体目录会保存为当前绝对路径；再次移动交付前请重新打包或重新设置工程字体目录。',
+        ] if fonts else [])
         report['generator'] = {'name': APP_NAME, 'version': VERSION}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')

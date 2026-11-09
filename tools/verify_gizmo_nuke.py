@@ -53,7 +53,7 @@ def verify(nuke, gui=False):
 from pathlib import Path
 root = Path({str(moved)!r})
 nuke.pluginAddPath(str(root / 'gizmos'))
-nuke.scriptOpen(str(root / 'test.nk'))
+nuke.scriptOpen(str(root / 'test_Relinked_relative.nk'))
 ''' + '''
 node = nuke.toNode('Outer1')
 result = {'gui': nuke.env['gui'], 'class': node.Class(),

@@ -38,7 +38,7 @@ class MediaFolderTests(unittest.TestCase):
             folder = target / Path(row['packed_path']).parent
             for source in asset.files:
                 self.assertEqual((folder / source.name).read_bytes(), source.read_bytes())
-            self.assertIn(row['packed_path'], (target / self.script.name).read_text(encoding='utf-8'))
+            self.assertIn(row['packed_path'], (target / (self.script.stem + '_Relinked_relative.nk')).read_text(encoding='utf-8'))
         self.assertEqual(report['copied_files'], len(list(plan.media_files())))
         self.assertEqual(len([p for p in (target / 'media').rglob('*') if p.is_file()]), report['copied_files'])
         return target, report

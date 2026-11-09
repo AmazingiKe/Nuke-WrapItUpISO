@@ -12,7 +12,7 @@
 
 ## 开始使用
 
-从 Releases 的 **Assets** 下载 `WrapItUpISO 1.1.27.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
+从 Releases 的 **Assets** 下载 `WrapItUpISO 1.1.28.exe`，双击运行。单个 EXE 已包含运行环境，**无需安装 Python**。
 
 1. **添加工程**：拖入 `.nk` 文件或文件夹，也可以点击 `+` 多选添加。
 2. **扫描依赖**：点击放大镜，检查素材与插件状态；有问题时点击条目查看原因。
@@ -27,12 +27,14 @@
 
 ```text
 shot_路径哈希/
-├── shot.nk             打包后的工程，接收方打开这一份
-├── shot_original.nk    保留原路径的工程副本，供对照
-├── media/              按节点名称整理的素材
-├── gizmos/             已收集的 Gizmo（如有）
-├── README.md           素材与插件的打包结果
-└── report.json         详细依赖记录与文件校验信息
+├── shot_original.nk           原工程副本，内容和原始路径保持不变
+├── shot_Relinked.nk           指向打包位置的绝对路径版
+├── shot_Relinked_relative.nk  可随整个交付文件夹移动的相对路径版
+├── FONTS/                    已收集的字体及字体度量文件
+├── media/                    按节点名称整理的素材
+├── gizmos/                   两种路径版本使用的 Gizmo（如有）
+├── README.md                 素材、字体与插件的打包结果
+└── report.json               详细依赖记录与文件校验信息
 ```
 
 **交付或移动时，请复制整个文件夹。** 打包完成后先查看包内 README，确认是否还有未收集的依赖。
@@ -50,7 +52,9 @@ shot_路径哈希/
 
 ## 接收方怎么打开
 
-使用配置好外部插件的 Nuke 打开包内原文件名对应的 `.nk`，不要用 `_original.nk` 作为迁移后的工程。
+推荐使用配置好外部插件的 Nuke 打开 `shot_Relinked_relative.nk`；`shot_Relinked.nk` 适合固定在打包位置使用，`shot_original.nk` 用于原环境或对照。
+
+字体收集支持 `font_file`、旧版 Text 的字体路径和 Text2 的字体族记录，统一放入 `FONTS`，不会安装到系统。Text2 的工程字体目录随版本设置。实测 Nuke 15.1v5 的 Text2 字体查找不支持部分中文路径，含 Text2 时请使用英文交付路径和字体文件名；在 Nuke 中另存后再次移动，请重新打包或设置工程字体目录。
 
 如果包内有已收集的 Gizmo，先在 Nuke 的 **Script Editor → Python** 中执行以下代码，把路径换成实际位置：
 

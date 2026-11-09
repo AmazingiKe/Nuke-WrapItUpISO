@@ -350,9 +350,10 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     plan.warnings.extend(plan.plugin_errors)
 
 
-def reference_edits(text, plugins):
+def reference_edits(text, plugins, *, aliases=None):
     from core import node_blocks
-    aliases = {p.name: p.packed_name for p in plugins if p.status == '就绪' and p.packed_name}
+    if aliases is None:
+        aliases = {p.name: p.packed_name for p in plugins if p.status == '就绪' and p.packed_name}
     return [(token.start, token.end, aliases[name])
             for name, _, _, token in node_blocks(text, class_tokens=True) if name in aliases]
 
@@ -364,7 +365,7 @@ def check_sources(plan, cancel):
             raise DependencyError(f'扫描后文件发生变化，请重新扫描：{path}')
 
 
-def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
+def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, absolute_edits=None, aliases=None):
     from core import DependencyError, Cancelled
     records = []
     if plan.plugins:
@@ -384,10 +385,17 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None):
                 text = text[:start] + value + text[end:]
             path = folder / ((plugin.packed_name or plugin.name) + '.gizmo')
             path.write_bytes(text.encode(encoding))
+            absolute_path = None
+            if absolute_edits is not None:
+                from delivery import apply_edits
+                absolute_path = folder / (aliases[plugin.name] + '.gizmo')
+                absolute_path.write_bytes(apply_edits(plan.documents[plugin.source][0], absolute_edits.get(plugin.source, [])).encode(encoding))
             records.append({'name': plugin.name, 'original_reference': plugin.name,
                             'packed_class': plugin.packed_name or plugin.name,
                             'source': plugin.source, 'source_sha256': plugin.sha256,
                             'packed_path': path.relative_to(stage).as_posix(), 'status': '已收集',
+                            'absolute_packed_path': absolute_path.relative_to(stage).as_posix() if absolute_path else None,
+                            'absolute_packed_class': aliases[plugin.name] if absolute_path else None,
                             'dependencies': plugin.dependencies, 'used_by': plugin.used_by,
                             'candidates': plugin.candidates})
     check_sources(plan, cancel)

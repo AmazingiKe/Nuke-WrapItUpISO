@@ -114,6 +114,25 @@ class WindowTests(unittest.TestCase):
         self.assertIn('打包完成', self.log())
         self.assertNotIn('跳过缺失插件', self.log())
 
+    def test_fonts_and_three_script_variants_from_window(self):
+        (self.folder / 'title.ttf').write_bytes(b'font fixture')
+        self.source.write_text('Text {\n font title.ttf\n name Title\n}\n', encoding='utf-8')
+        self.window.add([self.source])
+        self.wait_finished()
+        self.window.scan_only()
+        self.wait_finished()
+        row = self.window.table.get_children()[0]
+        self.assertEqual(self.window.table.set(row, 'type'), '字体')
+        self.window.output.set(str(self.folder / 'delivery'))
+        self.window.pack()
+        self.wait_finished()
+        report_path = next((self.folder / 'delivery').rglob('report.json'))
+        report = json.loads(report_path.read_text(encoding='utf-8'))
+        for key in ('original_path_script', 'relinked_script', 'relative_script'):
+            self.assertTrue((report_path.parent / report[key]).is_file())
+        self.assertEqual((report_path.parent / report['assets'][0]['packed_path']).read_bytes(), b'font fixture')
+        self.assertIn('打包完成', self.log())
+
     def test_script_review_warning_allows_window_packaging(self):
         self.source.write_text('NoOp {\n name Controls\n addUserKnob {22 help T {import webbrowser}}\n}\n')
         self.window.add([self.source])

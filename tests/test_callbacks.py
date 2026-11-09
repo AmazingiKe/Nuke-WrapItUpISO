@@ -47,7 +47,7 @@ class CallbackTests(unittest.TestCase):
                     plan = scan(self.script, automatic_plugins=automatic)
                     self.assertFalse(plan.plugin_blockers)
                     target = package(plan, self.root / f'out_{automatic}_{quoted}')
-                    self.assertEqual((target / self.script.name).read_bytes(), original)
+                    self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), original)
                     report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
                     self.assertTrue(report['gizmo_dependencies_complete'])
                     self.assertFalse(report['nuke_runtime_verified'])
@@ -107,7 +107,7 @@ class CallbackTests(unittest.TestCase):
         for name in ('Glow_Exponential6', 'Controls', 'help', 'seed'):
             self.assertIn(name, '\n'.join(plan.script_warnings))
         target = package(plan, self.root / 'automatic')
-        self.assertEqual((target / self.script.name).read_bytes(), original)
+        self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), original)
         self.assertFalse(sentinel.exists())
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertFalse(report['script_dependencies_verified'])

@@ -34,7 +34,7 @@ class ExternalPluginTests(unittest.TestCase):
                     self.assertIsNone(report['plugins'][0]['packed_path'])
                     self.assertFalse(report['gizmo_dependencies_complete'])
                     self.assertFalse(list((target / 'gizmos').iterdir()))
-                    self.assertEqual((target / self.script.name).read_bytes(), self.script.read_bytes())
+                    self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), self.script.read_bytes())
                     readme = (target / 'README.md').read_text(encoding='utf-8')
                     self.assertIn('未成功 0 项', readme)
                     self.assertIn('接收方安装', readme)

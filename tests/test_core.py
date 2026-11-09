@@ -22,7 +22,7 @@ class PackagingTests(unittest.TestCase):
                 original_name = self.script.stem + '_original.nk'
                 self.assertEqual((target / original_name).read_bytes(), original)
                 self.assertEqual(self.script.read_bytes(), original)
-                self.assertIn('/media/', (target / self.script.name).read_bytes().decode(encoding))
+                self.assertIn('/media/', (target / (self.script.stem + '_Relinked_relative.nk')).read_bytes().decode(encoding))
                 report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
                 self.assertEqual(report['original_path_script'], original_name)
                 self.assertEqual(report['file_hashes'][original_name], hashlib.sha256(original).hexdigest())
@@ -106,7 +106,7 @@ Write {
         target=package(plan,self.root/'packed')
         collected=list((target/'media').rglob('*.exr')); self.assertEqual(len(collected),3)
         self.assertEqual(sorted(p.read_bytes() for p in collected),sorted([bytes([1])*20,bytes([3])*20,b'different']))
-        text=(target/self.script.name).read_text(encoding='utf-8-sig')
+        text=(target/(self.script.stem + '_Relinked_relative.nk')).read_text(encoding='utf-8-sig')
         self.assertIn('file render/output.%04d.exr',text); self.assertIn('fake { Read { file NOT_A_FILE } }',text)
         self.assertIn('[file dirname [value root.name]]/media/',text)
         self.assertIn('file missing.exr',text); self.assertIn('[value root.foo]/dynamic.exr',text)
@@ -138,7 +138,7 @@ Write {
         plan = scan(self.script)
         self.assertEqual(plan.encoding, 'gb18030')
         target = package(plan, self.root / 'legacy')
-        self.assertIn('中文节点', (target / self.script.name).read_bytes().decode('gb18030'))
+        self.assertIn('中文节点', (target / (self.script.stem + '_Relinked_relative.nk')).read_bytes().decode('gb18030'))
         self.script.write_bytes(b'\xff')
         with self.assertRaisesRegex(ValueError, '无法解码'):
             scan(self.script)
