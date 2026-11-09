@@ -69,9 +69,10 @@ class TransferMeter:
 
 
 class Worker(threading.Thread):
-    def __init__(self, paths, output, events, session=None, language='zh-CN'):
+    def __init__(self, paths, output, events, session=None, language='zh-CN', before_run=None):
         super().__init__(daemon=False)
         self.language = language
+        self.before_run = before_run
         self.paths = paths
         self.output = output
         self.events = events
@@ -115,6 +116,7 @@ class Worker(threading.Thread):
         completed = failed = 0
         cancelled = False
         try:
+            if self.before_run: self.before_run()
             for index, path in enumerate(self.paths, 1):
                 if self.cancelled.is_set():
                     cancelled = True

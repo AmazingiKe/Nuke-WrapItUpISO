@@ -30,7 +30,7 @@ class WindowTests(unittest.TestCase):
         self.source = self.folder / '中文 shot.nk'
         (self.folder / 'plate.exr').write_bytes(b'pixels')
         self.source.write_text('Read {\n file plate.exr\n name Plate\n}\n', encoding='utf-8')
-        self.settings_path = self.folder / 'settings' / 'wrapitupiso_settings.json'
+        self.settings_path = self.folder / 'wrapitupiso_settings.json'
         self.window = Window(settings_path=self.settings_path, system_language='zh_CN')
         self.window.show()
         self.qt.processEvents()
@@ -59,6 +59,14 @@ class WindowTests(unittest.TestCase):
         QTest.mouseClick(self.window.scan_button, Qt.MouseButton.LeftButton)
         self.wait_finished()
 
+    def wait_settings(self, **expected):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            values = json.loads(self.settings_path.read_text(encoding='utf-8'))
+            if all(values[key] == value for key, value in expected.items()): return
+            QTest.qWait(10)
+        self.fail(f'Settings were not saved: {expected}')
+
     def pack(self, name='delivery'):
         self.window.output_entry.setText(str(self.folder / name))
         QTest.mouseClick(self.window.pack_button, Qt.MouseButton.LeftButton)
@@ -85,7 +93,8 @@ class WindowTests(unittest.TestCase):
     def test_language_switch_retranslates_existing_results_and_logs(self):
         self.add_scan()
         original_plan = self.window.plans[self.source][0]
-        self.window.set_language('en')
+        self.assertIn(self.window.language_menu.menuAction(), self.window.menuBar().actions())
+        self.window.language_actions['en'].trigger()
         self.assertEqual(self.window.scan_button.text(), 'Scan Dependencies')
         self.assertEqual(self.window.table.headerItem().text(0), 'Node')
         self.assertEqual(self.window.project_items[self.source].text(1), 'Scanned')
@@ -103,6 +112,7 @@ class WindowTests(unittest.TestCase):
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertEqual(report['assets'][0]['status'], '就绪')
         self.assertEqual(report['language'], 'ja')
+        self.wait_settings(language='ja')
         self.assertEqual(json.loads(self.settings_path.read_text(encoding='utf-8'))['language'], 'ja')
 
     def test_english_dependency_reasons_preserve_user_filenames(self):
@@ -117,6 +127,145 @@ class WindowTests(unittest.TestCase):
         self.assertIn('Packaging complete', self.log())
         self.assertIn(self.source.name, self.log())
         self.assertNotIn('跳过', self.log())
+
+    def test_language_switch_keeps_existing_asset_rows_and_scroll(self):
+        self.source.write_text(''.join(f'Read {{\n file plate.exr\n name Plate{i}\n}}\n' for i in range(200)), encoding='utf-8')
+        self.add_scan()
+        item = self.window.table.topLevelItem(150)
+        self.window.table.setCurrentItem(item)
+        self.qt.processEvents()
+        scroll = self.window.table.verticalScrollBar().value()
+        with patch.object(self.window, 'render_selected_project', wraps=self.window.render_selected_project) as rebuild:
+            self.window.set_language('ja')
+            self.qt.processEvents()
+            self.assertEqual(rebuild.call_count, 0)
+        self.assertIs(self.window.table.currentItem(), item)
+        self.assertEqual(self.window.table.verticalScrollBar().value(), scroll)
+        self.assertEqual(item.text(1), self.window.translator('kind.media'))
+
+    def test_reselecting_current_language_does_no_refresh_or_save(self):
+        self.window.settings_timer.stop()
+        with patch.object(self.window, 'retranslate') as refresh:
+            self.window.set_language('zh_CN')
+        refresh.assert_not_called()
+        self.assertFalse(self.window.settings_timer.isActive())
+
+    def test_slow_disk_does_not_block_language_switch_or_qt_events(self):
+        entered, release = threading.Event(), threading.Event()
+        threads = []
+        def slow_fsync(fd):
+            threads.append(threading.get_ident())
+            entered.set()
+            release.wait(3)
+        with patch('wrapitupiso.config.settings.os.fsync', side_effect=slow_fsync):
+            try:
+                self.window.set_language('en')
+                self.window.save_settings()
+                self.assertTrue(entered.wait(2))
+                self.assertNotIn(threading.get_ident(), threads)
+                self.window.set_language('ja')
+                ticks = []
+                QTimer.singleShot(0, lambda: ticks.append(True))
+                self.qt.processEvents()
+                self.assertTrue(ticks)
+                self.assertEqual(self.window.scan_button.text(), self.window.translator('action.scan'))
+            finally:
+                release.set()
+                self.window.close()
+        self.assertEqual(json.loads(self.settings_path.read_text(encoding='utf-8'))['language'], 'ja')
+
+    def test_rapid_switches_coalesce_and_close_remembers_final_choice(self):
+        from wrapitupiso.config import settings
+        with patch('wrapitupiso.config.settings.write_settings', wraps=settings.write_settings) as write:
+            for language in ('en', 'ja', 'en', 'zh-CN', 'ja'):
+                self.window.set_language(language)
+            self.assertEqual(write.call_count, 0)
+            self.window.close()
+            self.assertEqual(write.call_count, 1)
+        self.assertEqual(json.loads(self.settings_path.read_text(encoding='utf-8'))['language'], 'ja')
+
+    def test_scan_waits_for_inflight_settings_write_without_blocking_ui(self):
+        self.window.add([self.source])
+        self.wait_finished()
+        entered, release, scanned = threading.Event(), threading.Event(), threading.Event()
+        original = workers.scan
+        def slow_fsync(fd):
+            entered.set()
+            release.wait(3)
+        def record_scan(*args, **kwargs):
+            scanned.set()
+            return original(*args, **kwargs)
+        with patch('wrapitupiso.config.settings.os.fsync', side_effect=slow_fsync), patch('wrapitupiso.ui.workers.scan', side_effect=record_scan):
+            try:
+                self.window.save_settings()
+                self.assertTrue(entered.wait(2))
+                self.window.scan_only()
+                ticks = []
+                QTimer.singleShot(0, lambda: ticks.append(True))
+                QTest.qWait(100)
+                self.assertTrue(ticks)
+                self.assertFalse(scanned.is_set())
+            finally:
+                release.set()
+                self.wait_finished()
+        self.assertTrue(scanned.is_set())
+        self.assertIn(self.source, self.window.plans)
+
+    def test_log_retranslation_keeps_scroll_and_warning_colors(self):
+        from wrapitupiso.config.i18n import message as msg
+        from wrapitupiso.ui.widgets import COLORS
+        self.window.log_entries = [(msg('log.scanned') + f' · shot{i}.nk', 'warning' if i % 2 else 'info') for i in range(500)]
+        self.window.write_lines(self.window.log, self.window.log_entries)
+        self.qt.processEvents()
+        scroll = self.window.log.verticalScrollBar()
+        scroll.setValue(scroll.maximum() // 2)
+        position = scroll.value()
+        self.window.set_language('en')
+        self.qt.processEvents()
+        self.assertEqual(scroll.value(), position)
+        self.assertIn('Scan complete · shot499.nk', self.log())
+        block = self.window.log.document().findBlockByNumber(1)
+        self.assertEqual(block.begin().fragment().charFormat().foreground().color().name(), COLORS['warning'])
+        scroll.setValue(scroll.maximum())
+        self.window.set_language('ja')
+        self.qt.processEvents()
+        self.assertEqual(scroll.value(), scroll.maximum())
+
+    def test_retranslating_read_only_panels_keeps_no_undo_history(self):
+        self.add_scan()
+        for language in ('en', 'ja', 'zh-CN'):
+            self.window.set_language(language)
+        for view in (self.window.log, self.window.dependencies):
+            self.assertEqual(view.document().availableUndoSteps(), 0)
+
+    def test_background_save_error_is_reported_and_retry_succeeds(self):
+        original = self.settings_path.read_bytes()
+        with patch('wrapitupiso.config.settings.os.replace', side_effect=PermissionError('test locked settings')):
+            self.window.set_language('en')
+            self.window.settings_timer.stop()
+            self.window.save_settings()
+            deadline = time.monotonic() + 3
+            while 'test locked settings' not in self.log() and time.monotonic() < deadline:
+                QTest.qWait(10)
+            self.assertIn('test locked settings', self.log())
+            self.assertEqual(self.settings_path.read_bytes(), original)
+        self.window.save_settings()
+        self.wait_settings(language='en')
+        QTest.qWait(50)
+        self.assertIsNone(self.window.settings.error)
+
+    def test_unknown_settings_schema_stays_read_only_after_language_change(self):
+        path = self.folder / 'future_settings.json'
+        original = '{"schema_version": 99, "language": "ja"}'
+        path.write_text(original, encoding='utf-8')
+        window = Window(settings_path=path, system_language='zh_CN')
+        try:
+            window.set_language('en')
+            window.save_settings()
+        finally:
+            window.close()
+            window.deleteLater()
+        self.assertEqual(path.read_text(encoding='utf-8'), original)
 
     def test_settings_restore_layout_language_paths_and_filter(self):
         self.window.resize(1150, 740)
@@ -183,6 +332,30 @@ class WindowTests(unittest.TestCase):
             blocker.set()
             self.wait_finished()
         self.assertTrue(self.window.language_menu.isEnabled())
+
+    def test_settings_write_waits_until_scanning_finishes(self):
+        entered, release = threading.Event(), threading.Event()
+        original = workers.scan
+        def slow_scan(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+        self.window.add([self.source])
+        self.wait_finished()
+        before = self.settings_path.read_bytes()
+        with patch('wrapitupiso.ui.workers.scan', side_effect=slow_scan):
+            self.window.scan_only()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.window.only_issues.setChecked(True)
+                QTest.qWait(500)
+                self.assertEqual(self.settings_path.read_bytes(), before)
+            finally:
+                release.set()
+                self.wait_finished()
+        self.wait_settings(only_issues=True)
+        self.assertTrue(json.loads(self.settings_path.read_text(encoding='utf-8'))['only_issues'])
+        self.assertIn(self.source, self.window.plans)
 
     def test_native_qt_window_and_small_layout(self):
         self.assertIsInstance(self.window, QMainWindow)

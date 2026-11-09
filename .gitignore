@@ -29,3 +29,6 @@ Thumbs.db
 
 # Portable local preferences
 /settings/
+/wrapitupiso_settings.json
+/wrapitupiso_settings.invalid-*.json
+/.wrapitupiso-*.tmp

@@ -3,6 +3,7 @@ from wrapitupiso.config.i18n import status_code, status_message
 from wrapitupiso.config.i18n import message as msg, fmt, error_message
 from pathlib import Path
 from queue import Empty, Queue
+from itertools import groupby
 import os
 import sys
 import time
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QFile
     QSizePolicy, QSplitter, QTextEdit, QToolButton, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from wrapitupiso.config.i18n import Translator, LANGUAGES, Message, normalize_language
-from wrapitupiso.config.settings import SettingsStore
+from wrapitupiso.config.settings import SettingsStore, SettingsWriter
 from wrapitupiso.config.paths import resource_path
 from wrapitupiso.ui.workers import Worker, needs_review
 
@@ -65,6 +66,7 @@ class Window(QMainWindow):
         self.session = ScanSession()
         self.worker = None
         self.events = Queue()
+        self.settings_writer = SettingsWriter(self.settings.path, self.settings.system_language)
         self.last_project_directory = None
         self.closing = False
         self._build_widgets()
@@ -229,6 +231,7 @@ class Window(QMainWindow):
         self.log, self.dependencies = QTextEdit(), QTextEdit()
         for view in (self.log, self.dependencies):
             view.setReadOnly(True)
+            view.setUndoRedoEnabled(False)
             view.setMinimumHeight(90)
         self.log.document().setMaximumBlockCount(5000)
         log_panel.body.addWidget(self.log)
@@ -272,8 +275,7 @@ class Window(QMainWindow):
         action(file_menu, 'action.quit', self.close)
         view_menu = menu('menu.view')
         action(view_menu, 'action.reset_layout', self.reset_layout)
-        self.language_menu = view_menu.addMenu('')
-        self.bind(self.language_menu, 'setTitle', msg('menu.language'))
+        self.language_menu = menu('menu.language')
         language_group = QActionGroup(self)
         language_group.setExclusive(True)
         self.language_actions = {}
@@ -322,6 +324,8 @@ class Window(QMainWindow):
     def retranslate(self):
         restoring = self.restoring_settings
         self.restoring_settings = True
+        updates = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
         try:
             family = {'zh-CN': 'Microsoft YaHei UI', 'en': 'Segoe UI', 'ja': 'Yu Gothic UI'}[self.translator.language]
             self.setFont(QFont(family, 9))
@@ -329,17 +333,13 @@ class Window(QMainWindow):
                 getattr(widget, method)(self.translator.render(value))
             for path, state in self.project_states.items():
                 self.project_items[path].setText(1, self.translator.render(state))
-            selected = self.table.selectedItems()
-            selected_asset = selected[0].data(0, Qt.ItemDataRole.UserRole) if selected else None
-            self.render_selected_project()
-            if selected_asset is not None:
-                for index in range(self.table.topLevelItemCount()):
-                    item = self.table.topLevelItem(index)
-                    if item.data(0, Qt.ItemDataRole.UserRole) is selected_asset:
-                        self.table.setCurrentItem(item)
-                        break
-            self.write_lines(self.log, self.log_entries)
-            self.log.ensureCursorVisible()
+            for index in range(self.table.topLevelItemCount()):
+                item = self.table.topLevelItem(index)
+                asset = item.data(0, Qt.ItemDataRole.UserRole)
+                kind = 'plugin' if isinstance(asset, Plugin) else 'font' if asset.kind == 'font' else 'media'
+                item.setText(1, self.translator('kind.' + kind))
+            self.show_item_status()
+            self.write_lines(self.log, self.log_entries, preserve_scroll=True)
             self.progress_text.setToolTip(self.progress_text.text())
             for code, option in self.language_actions.items(): option.setChecked(code == self.translator.language)
             # Give translated headers room without discarding wider user columns.
@@ -352,12 +352,14 @@ class Window(QMainWindow):
                         if table.columnWidth(column) < minimum: table.setColumnWidth(column, minimum)
         finally:
             self.restoring_settings = restoring
+            self.setUpdatesEnabled(updates)
 
     def set_language(self, language):
-        if self.busy(): return
-        self.translator.language = normalize_language(language)
+        language = normalize_language(language)
+        if self.busy() or language == self.translator.language: return
+        self.translator.language = language
         self.retranslate()
-        self.save_settings()
+        self.schedule_settings()
 
     def open_settings_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.settings.path.parent)))
@@ -391,6 +393,11 @@ class Window(QMainWindow):
 
     def save_settings(self):
         if self.restoring_settings: return
+        # Atomic writes change the parent directory; do not invalidate a scan
+        # when projects or plugins happen to live beside the application.
+        if self.busy():
+            self.schedule_settings()
+            return
         geometry = self.normalGeometry() if self.isMaximized() or self.isMinimized() else self.geometry()
         position = getattr(self, '_normal_position', self.pos()) if self.isMaximized() or self.isMinimized() else self.pos()
         values = self.settings.data
@@ -403,7 +410,18 @@ class Window(QMainWindow):
         values['only_issues'] = self.only_issues.isChecked()
         values['output_directory'] = self.output_entry.text()
         values['last_project_directory'] = str(self.last_project_directory or '')
-        if not self.settings.save(): self.report_settings_error()
+        if self.settings.read_only:
+            self.report_settings_error()
+        else:
+            self.settings_writer.submit(values)
+
+    def poll_settings(self):
+        while True:
+            try: error = self.settings_writer.results.get_nowait()
+            except Empty: break
+            self.settings.error = error
+            if error: self.report_settings_error()
+            else: self._last_settings_error = None
 
     def report_settings_error(self):
         detail = str(self.settings.error)
@@ -440,10 +458,30 @@ class Window(QMainWindow):
         cursor.insertText(self.translator.render(text) + '\n', char_format)
         view.setTextCursor(cursor)
 
-    def write_lines(self, view, lines):
-        view.clear()
-        for text, level in lines: self.append_text(view, text, level)
-        view.moveCursor(QTextCursor.MoveOperation.Start)
+    def write_lines(self, view, lines, *, preserve_scroll=False):
+        scroll = view.verticalScrollBar()
+        position, at_bottom = scroll.value(), scroll.value() == scroll.maximum()
+        document = view.document()
+        layout_enabled = document.isLayoutEnabled()
+        document.setLayoutEnabled(False)
+        cursor = QTextCursor(document)
+        cursor.beginEditBlock()
+        try:
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.removeSelectedText()
+            formats = {}
+            for level, entries in groupby(lines, key=lambda entry: entry[1]):
+                if level not in formats:
+                    char_format = QTextCharFormat()
+                    char_format.setForeground(QColor(COLORS.get(level, COLORS['info'])))
+                    formats[level] = char_format
+                cursor.insertText(''.join(self.translator.render(text) + '\n' for text, _ in entries), formats[level])
+        finally:
+            cursor.endEditBlock()
+            document.setLayoutEnabled(layout_enabled)
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        view.setTextCursor(cursor)
+        if preserve_scroll: scroll.setValue(scroll.maximum() if at_bottom else position)
 
     def append_log(self, text, level='info'):
         self.log_entries.append((text, level))
@@ -462,6 +500,7 @@ class Window(QMainWindow):
         self.progress.set_projects(0, 1)
         self.progress.set_tasks(0, 0)
         self.bind(self.progress_text, 'setText', msg('progress.discovery'))
+        self.settings_writer.pause()
         self.worker = DiscoveryWorker(list(paths), self.events)
         self.worker.start()
 
@@ -485,6 +524,7 @@ class Window(QMainWindow):
     def discovery_finished(self, found, cancelled):
         self.worker.join()
         self.worker = None
+        self.settings_writer.resume()
         self.set_busy_controls(False)
         self.progress.finish()
         self.bind(self.progress_text, 'setText', msg('progress.discovery_done', outcome=msg('discovery.cancelled') if cancelled else msg('discovery.finished'), count=len(self.paths) - self.discovery_start_count))
@@ -622,10 +662,13 @@ class Window(QMainWindow):
         self.progress.set_tasks(0, 0)
         self.bind(self.progress_text, 'setText', msg('progress.scanning'))
         self.set_busy_controls(True)
-        self.worker = Worker(self.paths.copy(), output, self.events, self.session, self.translator.language)
+        self.settings_writer.pause()
+        self.worker = Worker(self.paths.copy(), output, self.events, self.session, self.translator.language,
+                             before_run=self.settings_writer.wait_idle)
         self.worker.start()
 
     def poll_events(self):
+        self.poll_settings()
         handlers = {'message': self.append_log, 'scanned': self.show_plan, 'progress': self.show_progress,
                     'finished': self.finished, 'project': self.show_project, 'project_done': self.project_done,
                     'project_state': self.set_project_state, 'discovered': self.discovered,
@@ -780,6 +823,7 @@ class Window(QMainWindow):
     def finished(self, completed, failed, cancelled):
         self.worker.join()
         self.worker = None
+        self.settings_writer.resume()
         for path in self.paths:
             if status_code(self.project_states[path]) == 'waiting': self.set_project_state(path, msg('status.unscanned'))
         self.set_busy_controls(False)
@@ -805,6 +849,8 @@ class Window(QMainWindow):
         else:
             self.settings_timer.stop()
             self.save_settings()
+            self.settings_writer.close()
+            self.poll_settings()
             self.poll_timer.stop()
             self.progress.stop_animation()
             event.accept()

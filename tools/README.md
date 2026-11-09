@@ -28,4 +28,10 @@ EXE 名称和版本来自根目录 `version.json`。输出包含 Python 和 Qt6�
 python tools/verify/benchmark_pipeline.py --baseline-ref HEAD --result tools/reports/benchmark.json
 ```
 
+语言切换基准使用原生 Qt 窗口，分别测量空窗口，以及 1,000 条依赖、5,000 行日志的情况；记录切换处理和后续绘制耗时，不操作真实工程：
+
+```powershell
+python tools/verify/benchmark_language.py --output tools/reports/benchmark-language.json
+```
+
 更多验证命令见 [开发与验证](../docs/reference.md#开发与验证)。

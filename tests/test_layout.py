@@ -18,7 +18,7 @@ class LayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch('os.getcwd', return_value=folder):
             self.assertEqual(application_root(), ROOT)
             self.assertEqual(bundle_root(), ROOT)
-            self.assertEqual(default_settings_path(), ROOT / 'settings/wrapitupiso_settings.json')
+            self.assertEqual(default_settings_path(), ROOT / 'wrapitupiso_settings.json')
             catalog = json.loads(resource_path('locales/translations.json').read_text(encoding='utf-8'))
             self.assertTrue(catalog)
             self.assertTrue(resource_path('icons/app.ico').is_file())
@@ -36,7 +36,7 @@ class LayoutTests(unittest.TestCase):
                 self.assertEqual(application_root(), release)
                 self.assertEqual(bundle_root(), unpacked)
                 self.assertEqual(resource_path('icons/app.ico'), unpacked / 'wrapitupiso/resources/icons/app.ico')
-                self.assertEqual(default_settings_path(), release / 'settings/wrapitupiso_settings.json')
+                self.assertEqual(default_settings_path(), release / 'wrapitupiso_settings.json')
 
     def test_cli_runs_without_site_packages_from_another_directory(self):
         expected = json.loads((ROOT / 'version.json').read_text(encoding='utf-8'))
