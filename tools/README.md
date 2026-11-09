@@ -34,4 +34,10 @@ python tools/verify/benchmark_pipeline.py --baseline-ref HEAD --result tools/rep
 python tools/verify/benchmark_language.py --output tools/reports/benchmark-language.json
 ```
 
+路径替换的 Nuke 实机验证会生成临时工程，检查手动指定、文件夹匹配、Gizmo 内部素材与 Text2 字体替换；分别渲染绝对路径版和搬移后的相对路径版，并比较图像哈希：
+
+```powershell
+python tools/verify/verify_relink_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe" --output tools/reports/relink-nuke.json
+```
+
 更多验证命令见 [开发与验证](../docs/reference.md#开发与验证)。
