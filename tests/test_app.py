@@ -10,7 +10,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QMenu
 
 from wrapitupiso.ui import workers
 from wrapitupiso.ui.window import Window, ensure_application
@@ -635,6 +635,124 @@ class WindowTests(unittest.TestCase):
             self.assertTrue((target / report[key]).is_file())
         self.assertIn('打包完成', self.log())
         self.assertTrue(self.window.open_readme_button.isEnabled())
+
+    def test_selected_scan_refreshes_only_selected_project(self):
+        other = self.folder / 'other.nk'
+        other.write_text('Read {\n file plate.exr\n name Other\n}\n')
+        self.add_scan([self.source, other])
+        previous = self.window.plans[other]
+        previous_cache = self.window.session.plans[other]
+        previous_state = self.window.project_items[other].text(1)
+        extra = 'Read {\n file missing.exr\n name New\n}\n'
+        self.source.write_text(self.source.read_text(encoding='utf-8') + extra, encoding='utf-8')
+        other.write_text(other.read_text() + extra)
+        self.select_project(self.source)
+        QTest.mouseClick(self.window.scan_selected_button, Qt.MouseButton.LeftButton)
+        self.wait_finished()
+        self.assertEqual(len(self.window.plans[self.source][0].assets), 2)
+        self.assertIs(self.window.plans[other], previous)
+        self.assertIs(self.window.session.plans[other], previous_cache)
+        self.assertEqual(self.window.project_items[other].text(1), previous_state)
+        self.assertEqual(self.window.progress.projects_total, 1)
+
+    def test_selected_scan_multiple_projects_excludes_unselected_review_from_summary(self):
+        second, third = self.folder / 'second.nk', self.folder / 'third.nk'
+        second.write_text('Read {\n file plate.exr\n}\n')
+        third.write_text('Read {\n file missing.exr\n}\n')
+        self.add_scan([self.source, second, third])
+        previous = self.window.plans[third]
+        self.window.project_table.clearSelection()
+        for path in (self.source, second): self.window.project_items[path].setSelected(True)
+        self.window.scan_selected_action.trigger()
+        self.wait_finished()
+        self.assertIs(self.window.plans[third], previous)
+        self.assertEqual(self.window.progress.projects_total, 2)
+        expected = self.window.translator('progress.result', outcome=self.window.translator('outcome.complete'), completed=2, failed=0, total=2)
+        self.assertEqual(self.window.total_text.text(), expected)
+        self.assertNotIn('third.nk', self.log())
+        self.assertNotIn('需核对', self.log())
+
+    def test_selected_scan_preserves_replacements_and_previous_outputs(self):
+        from wrapitupiso.engine.relink import dependency_key
+        other = self.folder / 'other.nk'
+        other.write_text('Read {\n file plate.exr\n name Other\n}\n')
+        self.source.write_text('Read {\n file missing.exr\n name Plate\n}\n')
+        self.add_scan([self.source, other])
+        self.select_project(self.source)
+        choices = {dependency_key(self.window.current_plan().assets[0]): str(self.folder / 'plate.exr')}
+        self.window.start_relink(choices)
+        self.wait_finished()
+        self.pack()
+        previous_outputs = dict(self.window.packaged_paths)
+        previous_state = self.window.project_items[other].text(1)
+        self.window.scan_selected()
+        self.wait_finished()
+        self.assertEqual(self.window.plans[self.source][0].assets[0].source, str(self.folder / 'plate.exr'))
+        self.assertEqual(self.window.replacements[self.source], choices)
+        self.assertEqual(self.window.packaged_paths, previous_outputs)
+        self.assertEqual(self.window.project_items[other].text(1), previous_state)
+        self.assertTrue(self.window.open_readme_button.isEnabled())
+
+    def test_selected_scan_failure_and_cancel_leave_other_project_untouched(self):
+        other = self.folder / 'other.nk'
+        other.write_text('Read {\n file plate.exr\n name Other\n}\n')
+        self.add_scan([self.source, other])
+        self.select_project(self.source)
+        previous, state = self.window.plans[other], self.window.project_items[other].text(1)
+        for error in (PermissionError('scan denied'), Cancelled()):
+            with self.subTest(error=type(error).__name__), patch('wrapitupiso.ui.workers.scan', side_effect=error):
+                self.window.scan_selected()
+                self.wait_finished()
+                self.assertIs(self.window.plans[other], previous)
+                self.assertEqual(self.window.project_items[other].text(1), state)
+                self.assertEqual(self.window.progress.projects_total, 1)
+
+    def test_selected_scan_controls_follow_selection_and_busy_state(self):
+        self.assertFalse(self.window.scan_selected_button.isEnabled())
+        self.assertFalse(self.window.scan_selected_action.isEnabled())
+        self.add_scan()
+        self.assertTrue(self.window.scan_selected_button.isEnabled())
+        self.window.project_table.clearSelection()
+        self.assertFalse(self.window.scan_selected_action.isEnabled())
+        self.window.scan_selected()
+        self.assertFalse(self.window.busy())
+        self.select_project(self.source)
+        entered, release = threading.Event(), threading.Event()
+        original = workers.scan
+        def slow_scan(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+        with patch('wrapitupiso.ui.workers.scan', side_effect=slow_scan):
+            try:
+                self.window.scan_selected()
+                self.assertTrue(entered.wait(2))
+                self.assertFalse(self.window.scan_selected_button.isEnabled())
+                self.assertFalse(self.window.scan_selected_action.isEnabled())
+            finally:
+                release.set()
+                self.wait_finished()
+        self.assertTrue(self.window.scan_selected_action.isEnabled())
+
+    def test_project_context_menu_rescans_clicked_project(self):
+        other = self.folder / 'other.nk'
+        other.write_text('Root {\n}\n')
+        self.add_scan([self.source, other])
+        previous = self.window.plans[self.source]
+        other.write_text('Read {\n file plate.exr\n name Added\n}\n')
+        self.select_project(self.source)
+        clicked = self.window.project_table.visualItemRect(self.window.project_items[other]).center()
+        opened = []
+        class SelectingMenu(QMenu):
+            def exec(menu, point):
+                opened.append(menu.actions()[0].text())
+                menu.actions()[0].trigger()
+        with patch('wrapitupiso.ui.window.QMenu', SelectingMenu):
+            self.window.show_project_menu(clicked)
+        self.wait_finished()
+        self.assertEqual(opened, [self.window.translator('action.scan_selected')])
+        self.assertEqual(len(self.window.plans[other][0].assets), 1)
+        self.assertIs(self.window.plans[self.source], previous)
 
     def test_fonts_display_and_package(self):
         (self.folder / 'Title.TTF').write_bytes(b'font')

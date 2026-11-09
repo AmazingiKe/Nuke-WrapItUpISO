@@ -175,8 +175,11 @@ class Window(QMainWindow):
         self.project_count.setObjectName('muted')
         projects.header.addWidget(self.project_count)
         self.add_project_button = self._button(msg('action.add'), 'add', self.choose_projects, compact=True)
+        self.scan_selected_button = self._button(msg('action.scan_selected'), 'scan', self.scan_selected, msg('hint.scan_selected'), compact=True)
+        self.scan_selected_button.setEnabled(False)
         self.clear_button = self._button(msg('action.clear'), 'clear', self.clear, compact=True)
         projects.header.addWidget(self.add_project_button)
+        projects.header.addWidget(self.scan_selected_button)
         projects.header.addWidget(self.clear_button)
         self.project_table = self._tree(lambda: not self.busy(), msg('empty.projects'), msg('empty.add_hint'))
         self.bind(self.project_table, 'setAccessibleName', msg('access.projects'))
@@ -286,9 +289,14 @@ class Window(QMainWindow):
             if shortcut: result.setShortcut(QKeySequence(shortcut))
             return result
         file_menu = menu('menu.file')
-        self.edit_actions = [action(file_menu, key, callback, shortcut) for key, shortcut, callback in (
+        self.edit_actions = []
+        for key, shortcut, callback in (
             ('menu.add', 'Ctrl+O', self.choose_projects), ('menu.output', '', self.choose_output),
-            ('action.scan', 'Ctrl+R', self.scan_only), ('action.package', 'Ctrl+Return', self.pack))]
+            ('action.scan', 'Ctrl+R', self.scan_only), ('action.scan_selected', 'Ctrl+Shift+R', self.scan_selected),
+            ('action.package', 'Ctrl+Return', self.pack)):
+            command = action(file_menu, key, callback, shortcut)
+            if key == 'action.scan_selected': self.scan_selected_action = command
+            else: self.edit_actions.append(command)
         file_menu.addSeparator()
         action(file_menu, 'action.quit', self.close)
         view_menu = menu('menu.view')
@@ -554,7 +562,13 @@ class Window(QMainWindow):
         for action in getattr(self, 'edit_actions', []): action.setEnabled(not busy)
         self.cancel.setEnabled(busy)
         self.language_menu.setEnabled(not busy)
+        self.update_project_controls(busy=busy)
         self.update_relink_controls(busy=busy)
+
+    def update_project_controls(self, *, busy=None):
+        enabled = bool(self.selected_project_paths()) and not (self.busy() if busy is None else busy)
+        self.scan_selected_button.setEnabled(enabled)
+        if hasattr(self, 'scan_selected_action'): self.scan_selected_action.setEnabled(enabled)
 
     def dragEnterEvent(self, event):
         over_output = self.output_entry.rect().contains(self.output_entry.mapFrom(self, event.position().toPoint()))
@@ -621,6 +635,8 @@ class Window(QMainWindow):
         if not item or self.busy(): return
         if not item.isSelected(): self.project_table.setCurrentItem(item)
         menu = QMenu(self)
+        menu.addAction(self.translator('action.scan_selected'), self.scan_selected)
+        menu.addSeparator()
         menu.addAction(self.translator('action.remove_selected'), self.remove_selected)
         menu.addAction(self.translator('action.clear_all'), self.clear)
         menu.exec(self.project_table.viewport().mapToGlobal(point))
@@ -772,6 +788,10 @@ class Window(QMainWindow):
     def scan_only(self):
         self.start(None)
 
+    def scan_selected(self):
+        paths = self.selected_project_paths()
+        if paths: self.start(None, paths=paths)
+
     def pack(self):
         output = self.output_entry.text().strip()
         if not output:
@@ -779,26 +799,28 @@ class Window(QMainWindow):
             return
         self.start(output)
 
-    def start(self, output):
+    def start(self, output, *, paths=None):
         if self.busy(): return
-        if not self.paths:
-            QMessageBox.information(self, self.translator('title.add'), self.translator('prompt.add'))
+        targets = self.paths.copy() if paths is None else [path for path in self.paths if path in paths]
+        if not targets:
+            if paths is None: QMessageBox.information(self, self.translator('title.add'), self.translator('prompt.add'))
             return
         self.clear_log()
-        self.append_log(msg('log.started', action=msg('task.package') if output else msg('task.scan'), count=len(self.paths)))
-        if not output: self.session = ScanSession()
-        self.plans.clear(); self.project_errors.clear()
-        for path in self.paths:
+        self.append_log(msg('log.started', action=msg('task.package') if output else msg('task.scan'), count=len(targets)))
+        if not output and paths is None: self.session = ScanSession()
+        for path in targets:
+            self.plans.pop(path, None)
+            self.project_errors.pop(path, None)
             self.set_project_state(path, msg('status.waiting'))
             self.project_items[path].setText(2, '—')
         self.render_selected_project()
-        self.progress.set_projects(0, len(self.paths))
-        self.bind(self.total_text, 'setText', msg('progress.start', total=len(self.paths)))
+        self.progress.set_projects(0, len(targets))
+        self.bind(self.total_text, 'setText', msg('progress.start', total=len(targets)))
         self.progress.set_tasks(0, 0)
         self.bind(self.progress_text, 'setText', msg('progress.scanning'))
         self.set_busy_controls(True)
         self.settings_writer.pause()
-        self.worker = Worker(self.paths.copy(), output, self.events, self.session, self.translator.language,
+        self.worker = Worker(targets, output, self.events, self.session, self.translator.language,
                              before_run=self.settings_writer.wait_idle, replacements=self.replacements)
         self.worker.start()
 
@@ -865,6 +887,7 @@ class Window(QMainWindow):
         self.show_item_status()
 
     def show_item_status(self, event=None):
+        self.update_project_controls()
         self.update_relink_controls()
         selection = self.selected_project_paths()
         if not selection:
@@ -961,21 +984,22 @@ class Window(QMainWindow):
             self.bind(self.progress_text, 'setText', msg('progress.cancel_discovery') if isinstance(self.worker, DiscoveryWorker) else msg('progress.cancel_cleanup'))
 
     def finished(self, completed, failed, cancelled):
+        paths = self.worker.paths
         self.worker.join()
         self.worker = None
         self.settings_writer.resume()
-        for path in self.paths:
+        for path in paths:
             if status_code(self.project_states[path]) == 'waiting': self.set_project_state(path, msg('status.unscanned'))
         self.set_busy_controls(False)
-        self.progress.set_projects(completed + failed, len(self.paths))
+        self.progress.set_projects(completed + failed, len(paths))
         self.progress.finish()
         outcome = msg('status.cancelled') if cancelled else msg('outcome.failed') if failed else msg('outcome.complete')
         self.bind(self.progress_text, 'setText', outcome)
-        self.bind(self.total_text, 'setText', msg('progress.result', outcome=outcome, completed=completed, failed=failed, total=len(self.paths)))
-        review_count = sum(needs_review(plan) for plan, _ in self.plans.values())
+        self.bind(self.total_text, 'setText', msg('progress.result', outcome=outcome, completed=completed, failed=failed, total=len(paths)))
+        review_count = sum(needs_review(self.plans[path][0]) for path in paths if path in self.plans)
         summary = msg('log.result', outcome=msg('status.cancelled') if cancelled else msg('outcome.batch_complete'), count=completed)
         if failed: summary += msg('log.failed_count', count=failed)
-        if cancelled: summary += msg('log.incomplete_count', count=len(self.paths) - completed - failed)
+        if cancelled: summary += msg('log.incomplete_count', count=len(paths) - completed - failed)
         if review_count: summary += msg('log.review_count', count=review_count)
         if failed or review_count: summary += msg('log.see_properties')
         self.append_log(summary, 'error' if failed else 'warning' if cancelled or review_count else 'success')

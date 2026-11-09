@@ -245,9 +245,19 @@
     "ja": "依存関係をスキャン"
   },
   "hint.scan": {
-    "zh-CN": "扫描素材与插件 · Ctrl+R",
-    "en": "Scan assets and plugins · Ctrl+R",
-    "ja": "素材とプラグインをスキャン · Ctrl+R"
+    "zh-CN": "扫描列表中全部工程的素材与插件 · Ctrl+R",
+    "en": "Scan assets and plugins for all listed projects · Ctrl+R",
+    "ja": "一覧の全プロジェクトの素材とプラグインをスキャン · Ctrl+R"
+  },
+  "action.scan_selected": {
+    "zh-CN": "重新扫描选中工程",
+    "en": "Rescan Selected Projects",
+    "ja": "選択プロジェクトを再スキャン"
+  },
+  "hint.scan_selected": {
+    "zh-CN": "仅重新扫描选中的工程 · Ctrl+Shift+R",
+    "en": "Rescan only the selected projects · Ctrl+Shift+R",
+    "ja": "選択したプロジェクトのみ再スキャン · Ctrl+Shift+R"
   },
   "action.package": {
     "zh-CN": "开始打包",
