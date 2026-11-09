@@ -1,22 +1,25 @@
 """Compare a committed baseline with the working tree on generated local fixtures.
 
-Usage: python tools/benchmark_pipeline.py --baseline-ref c728eef
+Usage: python tools/verify/benchmark_pipeline.py --baseline-ref c728eef
 No production projects are read or modified. Times include warm filesystem caches.
 """
 import argparse
+import importlib
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
+from zipfile import ZipFile
 from unittest.mock import patch
 
 
 def measure(code, fixture, output, optimized):
     sys.path.insert(0, str(code))
-    import core
-    import gizmo
+    prefix = 'wrapitupiso.engine.' if (code / 'wrapitupiso').is_dir() else ''
+    core = importlib.import_module(prefix + 'core')
+    gizmo = importlib.import_module(prefix + 'gizmo')
     counts = {'index_builds': 0, 'media_hash_reads': 0, 'media_hash_bytes': 0}
     index_plugins, digest_file = gizmo.index_plugins, gizmo.digest_file
     def index(*args, **kwargs):
@@ -29,11 +32,10 @@ def measure(code, fixture, output, optimized):
         return digest_file(path, *args, **kwargs)
     scripts = sorted((fixture / 'scripts').glob('*.nk'))
     started = time.perf_counter()
-    with patch('gizmo.default_paths', return_value=[fixture / 'plugins']), \
-            patch('gizmo.index_plugins', side_effect=index), patch('gizmo.digest_file', side_effect=digest):
+    with patch.object(gizmo, 'default_paths', return_value=[fixture / 'plugins']), \
+            patch.object(gizmo, 'index_plugins', side_effect=index), patch.object(gizmo, 'digest_file', side_effect=digest):
         if optimized:
-            from scan_cache import ScanSession
-            session = ScanSession()
+            session = importlib.import_module(prefix + 'scan_cache').ScanSession()
             for script in scripts: session.scan(script)
         else:
             for script in scripts: core.scan(script, automatic_plugins=True)
@@ -58,7 +60,7 @@ def main():
         measure(Path(code), Path(fixture), Path(output), optimized == 'yes')
         return
     if not args.baseline_ref: parser.error('请指定 --baseline-ref')
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     scratch = root / 'tools' / 'build'
     scratch.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='benchmark-', dir=scratch) as temp:
@@ -66,9 +68,13 @@ def main():
         assert temporary.parent == scratch.resolve()
         baseline, fixture = temporary / 'baseline', temporary / 'fixture'
         baseline.mkdir(); fixture.mkdir()
-        for name in ('core.py', 'gizmo.py', 'plugin_paths.py', 'package_readme.py'):
-            data = subprocess.check_output(['git', 'show', f'{args.baseline_ref}:{name}'], cwd=root)
-            (baseline / name).write_bytes(data)
+        archive = temporary / 'baseline.zip'
+        subprocess.run(['git', 'archive', '--format=zip', f'--output={archive}', args.baseline_ref], cwd=root, check=True)
+        with ZipFile(archive) as files:
+            for member in files.infolist():
+                if not (baseline / member.filename).resolve().is_relative_to(baseline):
+                    raise ValueError('Baseline archive contains a path outside its directory')
+            files.extractall(baseline)
         scripts, media, plugins = (fixture / name for name in ('scripts', 'source_media', 'plugins'))
         for path in (scripts, media, plugins): path.mkdir()
         (media / 'plate.exr').write_bytes(b'x' * (16 * 1024 * 1024))

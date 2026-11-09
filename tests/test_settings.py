@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from settings import SettingsStore, default_settings_path
+from wrapitupiso.config.settings import SettingsStore, default_settings_path
 
 
 class SettingsTests(unittest.TestCase):
@@ -52,14 +52,14 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.path.read_text(encoding='utf-8'), content)
 
     def test_unwritable_location_does_not_crash_or_claim_saved(self):
-        with patch('settings.os.replace', side_effect=PermissionError('read only')):
+        with patch('wrapitupiso.config.settings.os.replace', side_effect=PermissionError('read only')):
             store = SettingsStore(self.path, system_language='en')
             self.assertFalse(store.save())
             self.assertIsNotNone(store.error)
         self.assertFalse(self.path.exists())
 
     def test_frozen_settings_live_next_to_executable(self):
-        with patch('settings.sys.frozen', True, create=True), patch('settings.sys.executable', str(Path(self.temp.name) / 'WrapItUpISO.exe')):
+        with patch('wrapitupiso.config.paths.sys.frozen', True, create=True), patch('wrapitupiso.config.paths.sys.executable', str(Path(self.temp.name) / 'WrapItUpISO.exe')):
             self.assertEqual(default_settings_path(), self.path)
 
 

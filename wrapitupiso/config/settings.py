@@ -3,15 +3,14 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-import sys
 import tempfile
 
-from i18n import normalize_language
+from wrapitupiso.config.i18n import normalize_language
+from wrapitupiso.config.paths import application_root
 
 
 def default_settings_path():
-    root = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
-    return root / 'settings' / 'wrapitupiso_settings.json'
+    return application_root() / 'settings' / 'wrapitupiso_settings.json'
 
 
 def defaults(language):

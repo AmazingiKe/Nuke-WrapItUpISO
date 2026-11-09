@@ -1,5 +1,5 @@
 import unittest
-from package_readme import render_package_readme
+from wrapitupiso.engine.package_readme import render_package_readme
 
 class PackageReadmeTests(unittest.TestCase):
     def test_complete_partial_and_missing_are_listed_without_reasons(self):

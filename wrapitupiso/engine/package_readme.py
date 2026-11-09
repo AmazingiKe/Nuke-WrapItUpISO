@@ -1,10 +1,10 @@
 """Concise delivery summary derived from the completed package report."""
-from i18n import status_code, status_message
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import status_code, status_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 from collections import Counter
 from html import escape
-from app_version import APP_LABEL
-from i18n import Translator
+from wrapitupiso.config.version import APP_LABEL
+from wrapitupiso.config.i18n import Translator
 
 
 def cell(value):

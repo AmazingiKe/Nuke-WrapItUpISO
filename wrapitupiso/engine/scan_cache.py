@@ -1,5 +1,5 @@
 """In-memory scan reuse with conservative dependency invalidation."""
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 
@@ -12,8 +12,8 @@ class Snapshot:
         self.reusable = True
 
     def fingerprint(self, path, content):
-        from core import Cancelled
-        from gizmo import digest_file
+        from wrapitupiso.engine.core import Cancelled
+        from wrapitupiso.engine.gizmo import digest_file
         if self.cancel():
             raise Cancelled()
         try:
@@ -52,8 +52,8 @@ class ScanSession:
         self.index_entry = None
 
     def plugin_index(self, roots, cancel, progress):
-        from gizmo import index_plugins
-        from plugin_paths import discover_paths
+        from wrapitupiso.engine.gizmo import index_plugins
+        from wrapitupiso.engine.plugin_paths import discover_paths
         key = tuple(str(p) for p in roots)
         if self.index_entry:
             old_key, snapshot, result = self.index_entry
@@ -70,8 +70,8 @@ class ScanSession:
         return (*result, snapshot)
 
     def scan(self, path, cancel=lambda: False, progress=lambda a,b,c: None, *, reuse=False, scanner=None):
-        import core
-        from gizmo import default_paths
+        from wrapitupiso.engine import core
+        from wrapitupiso.engine.gizmo import default_paths
         path = Path(path).resolve()
         previous = self.plans.get(path)
         roots = tuple(str(p) for p in default_paths())

@@ -10,7 +10,7 @@ from PyInstaller.utils.win32.versioninfo import (
 
 project_root = Path(SPECPATH).resolve().parent
 sys.path.insert(0, str(project_root))
-from i18n import CATALOG, validate_catalog
+from wrapitupiso.config.i18n import CATALOG, validate_catalog
 validate_catalog(CATALOG)
 metadata = json.loads((project_root / 'version.json').read_text(encoding='utf-8'))
 app_name, app_version = metadata['name'], metadata['version']
@@ -32,8 +32,8 @@ a = Analysis(
     [str(project_root / 'app.py')],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[(str(project_root / 'version.json'), '.'), (str(project_root / 'assets'), 'assets'),
-           (str(project_root / 'locales'), 'locales')],
+    datas=[(str(project_root / 'version.json'), '.'),
+           (str(project_root / 'wrapitupiso/resources'), 'wrapitupiso/resources')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -51,7 +51,7 @@ exe = EXE(
     a.datas,
     [],
     name=release_name,
-    icon=str(project_root / 'assets' / 'Icon' / 'app.ico'),
+    icon=str(project_root / 'wrapitupiso/resources/icons/app.ico'),
     version=version_info,
     debug=False,
     bootloader_ignore_signals=False,

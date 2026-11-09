@@ -1,11 +1,11 @@
 """Collect .nk assets without importing Nuke or executing script expressions."""
 from __future__ import annotations
-from i18n import status_code, status_message
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import status_code, status_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import os, re, json, hashlib, shutil, stat
 from pathlib import Path
 from dataclasses import dataclass, field
-from app_version import APP_NAME, VERSION
+from wrapitupiso.config.version import APP_NAME, VERSION
 
 class Cancelled(Exception): pass
 
@@ -219,8 +219,8 @@ def resolve(raw, base):
     return p if p.is_absolute() else base / p
 
 def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None):
-    from media_scan import MediaIndex
-    from font_scan import FONT_EXTENSIONS, font_files
+    from wrapitupiso.engine.media_scan import MediaIndex
+    from wrapitupiso.engine.font_scan import FONT_EXTENSIONS, font_files
     media_index = media_index or MediaIndex(cancel, snapshot)
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
@@ -278,10 +278,10 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
 
 
 def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None):
-    from font_scan import collect_fonts
-    from gizmo import scan_dependencies
-    from scan_cache import Snapshot
-    from media_scan import MediaIndex
+    from wrapitupiso.engine.font_scan import collect_fonts
+    from wrapitupiso.engine.gizmo import scan_dependencies
+    from wrapitupiso.engine.scan_cache import Snapshot
+    from wrapitupiso.engine.media_scan import MediaIndex
     snapshot = Snapshot(cancel) if context else None
     media_index = MediaIndex(cancel, snapshot)
     plan = _scan_media(path, cancel, progress, snapshot=snapshot, media_index=media_index)
@@ -332,10 +332,10 @@ def media_folders(assets, cancel=lambda: False):
 
 
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None, *, language='zh-CN'):
-    from gizmo import check_sources, finish_bundle, reference_edits
-    from package_readme import render_package_readme
-    from delivery import absolute_plugin_names, apply_edits, media_reference_name, path_word, project_settings
-    from font_scan import font_destinations
+    from wrapitupiso.engine.gizmo import check_sources, finish_bundle, reference_edits
+    from wrapitupiso.engine.package_readme import render_package_readme
+    from wrapitupiso.engine.delivery import absolute_plugin_names, apply_edits, media_reference_name, path_word, project_settings
+    from wrapitupiso.engine.font_scan import font_destinations
     if plan.plugin_blockers:
         raise DependencyError(msg('package.unresolved') + join_messages('\n', plan.plugin_blockers))
     check_sources(plan, cancel)
@@ -430,7 +430,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             msg('font.resave_warning'),
         ] if fonts else [])
         report['generator'] = {'name': APP_NAME, 'version': VERSION}
-        from i18n import normalize_language
+        from wrapitupiso.config.i18n import normalize_language
         report['language'] = normalize_language(language)
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         (stage/'readme.md').write_text(render_package_readme(report, language), encoding='utf-8')

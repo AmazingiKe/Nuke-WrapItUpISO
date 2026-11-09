@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import Cancelled, scan, package
-from plugin_paths import discover_paths
+from wrapitupiso.engine.core import Cancelled, scan, package
+from wrapitupiso.engine.plugin_paths import discover_paths
 
 
 class PluginPathTests(unittest.TestCase):
@@ -111,7 +111,7 @@ nuke.pluginAppendPath(f'{base}/{name}')
         self.write(self.seed, "import nuke\nnuke.pluginAddPath('../external')")
         script = self.root / 'shot.nk'
         script.write_text('Root {\n}\nDemo {\n name Demo1\n}\n')
-        with patch('gizmo.default_paths', return_value=[self.seed]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.seed]):
             plan = scan(script)
         self.assertEqual(plan.plugins[0].status, '就绪')
         self.assertIn(str(external), plan.search_paths)
@@ -125,7 +125,7 @@ class AutomaticPluginTests(unittest.TestCase):
             folder = Path(root)
             script = folder / 'shot.nk'
             script.write_text('Root {\n}\nMissingGizmo {\n name m\n}\n')
-            with patch('gizmo.default_paths', return_value=[]):
+            with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[]):
                 plan = scan(script, automatic_plugins=True)
             self.assertFalse(plan.plugin_blockers)
             target = package(plan, folder / 'out')
@@ -143,7 +143,7 @@ class AutomaticPluginTests(unittest.TestCase):
             for directory, label in ((a, 'first'), (b, 'second')):
                 (directory/'Demo.gizmo').write_text('Gizmo {\n name Demo\n label '+label+'\n}\nend_group\n')
             script = folder/'shot.nk'; script.write_text('Demo {\n name d\n}\n')
-            with patch('gizmo.default_paths', return_value=[a,b]):
+            with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[a,b]):
                 plan = scan(script, automatic_plugins=True)
             self.assertEqual(plan.plugins[0].source, str(a/'Demo.gizmo'))
             self.assertFalse(plan.plugin_blockers)
@@ -156,7 +156,7 @@ class AutomaticPluginTests(unittest.TestCase):
             folder = Path(root)
             (folder/'Outer.gizmo').write_text('Gizmo {\n name Outer\n}\nMissing {\n name child\n}\nend_group\n')
             script=folder/'shot.nk'; script.write_text('Outer {\n name outer\n}\n')
-            with patch('gizmo.default_paths', return_value=[folder]):
+            with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[folder]):
                 plan=scan(script,automatic_plugins=True)
             target=package(plan,folder/'out')
             self.assertTrue((target/'gizmos/outer.gizmo').exists())

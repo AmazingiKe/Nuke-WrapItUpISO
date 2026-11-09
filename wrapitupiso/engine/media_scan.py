@@ -10,7 +10,7 @@ class MediaIndex:
         self.directories, self.file_flags, self.patterns = {}, {}, {}
 
     def check_cancel(self):
-        from core import Cancelled
+        from wrapitupiso.engine.core import Cancelled
         if self.cancel(): raise Cancelled()
 
     def entries(self, folder):

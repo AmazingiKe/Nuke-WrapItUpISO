@@ -1,10 +1,10 @@
 """Conservative Tcl command inspection; never evaluates source expressions."""
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import re
 
 
 def inspect_commands(text):
-    from core import node_blocks
+    from wrapitupiso.engine.core import node_blocks
     blockers, reviews = [], []
     blocks = list(node_blocks(text, class_tokens=True))
     # Knob bodies are saved data. Callbacks/expressions inside them are inspected

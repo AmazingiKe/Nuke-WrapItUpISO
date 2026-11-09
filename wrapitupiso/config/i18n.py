@@ -5,11 +5,11 @@ Its key and parameters remain available for rendering in another language.
 File paths and other user data are never interpreted as translation keys.
 """
 import json
-from pathlib import Path
 from string import Formatter
+from wrapitupiso.config.paths import resource_path
 
 LANGUAGES = {'zh-CN': '简体中文', 'en': 'English', 'ja': '日本語'}
-CATALOG = json.loads((Path(__file__).parent / 'locales/translations.json').read_text(encoding='utf-8'))
+CATALOG = json.loads(resource_path('locales/translations.json').read_text(encoding='utf-8'))
 
 
 def normalize_language(value):

@@ -3,7 +3,7 @@
 COM slots/signatures follow the Windows SDK IFileOpenDialog,
 IFileDialogCustomize and IFileDialog(Control)Events declarations.
 """
-from i18n import message as msg, error_message, Translator
+from wrapitupiso.config.i18n import message as msg, error_message, Translator
 import ctypes as C
 from pathlib import Path
 from uuid import UUID

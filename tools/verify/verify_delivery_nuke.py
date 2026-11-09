@@ -9,9 +9,9 @@ import sys
 import tempfile
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import package, scan
-from delivery import path_word
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from wrapitupiso.engine.core import package, scan
+from wrapitupiso.engine.delivery import path_word
 
 
 def verify(nuke, font):
@@ -89,7 +89,7 @@ Path({str(destination / 'result.json')!r}).write_text(json.dumps(result))
 
         original_bytes = script.read_bytes()
         before = render(script, source, 'before')
-        with patch('gizmo.default_paths', return_value=[source]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[source]):
             plan = scan(script, automatic_plugins=True)
             assert all(a.status == '就绪' for a in plan.assets), [(a.raw, a.status, a.note) for a in plan.assets]
             target = package(plan, root / 'output')

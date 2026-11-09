@@ -5,7 +5,7 @@ from PIL import Image
 
 
 def prepare_icons():
-    folder = Path(__file__).resolve().parents[1] / 'assets' / 'Icon'
+    folder = Path(__file__).resolve().parents[2] / 'wrapitupiso/resources/icons'
     with Image.open(folder / 'nuke logo.png') as image:
         image.save(folder / 'app.ico', sizes=[(size, size) for size in
                                             (16, 20, 24, 32, 40, 48, 64, 128, 256)])

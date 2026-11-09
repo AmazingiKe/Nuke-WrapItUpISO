@@ -1,5 +1,5 @@
 """Cancellable directory discovery. No GUI calls are made from this worker."""
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 import threading

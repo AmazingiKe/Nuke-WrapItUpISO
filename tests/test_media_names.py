@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import scan, package
+from wrapitupiso.engine.core import scan, package
 
 
 class MediaFolderTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class MediaFolderTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.script = self.root / 'shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[])
         defaults.start()
         self.addCleanup(defaults.stop)
 

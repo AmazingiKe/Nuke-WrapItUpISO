@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import package, scan
+from wrapitupiso.engine.core import package, scan
 
 
 class ExternalPluginTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class ExternalPluginTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.script = self.root / 'shot.nk'
         self.name = 'OFXcom.revisionfx.rsmb_v3'
-        defaults = patch('gizmo.default_paths', return_value=[self.root])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.root])
         defaults.start()
         self.addCleanup(defaults.stop)
 

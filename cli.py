@@ -1,28 +1,6 @@
-from i18n import status_code, status_message
-import argparse
-from pathlib import Path
-from core import package
-from scan_cache import ScanSession
-from app_version import APP_LABEL, APP_NAME
+"""Start the command-line packager (Python standard library only)."""
+from wrapitupiso.cli import main
 
-def main():
-    parser=argparse.ArgumentParser(description=f'{APP_NAME}：Nuke 批量打包器，仅需 Python 标准库，无需 Nuke')
-    parser.add_argument('--version', action='version', version=APP_LABEL)
-    parser.add_argument('scripts',nargs='+'); parser.add_argument('-o','--output'); parser.add_argument('--scan',action='store_true')
-    args=parser.parse_args()
-    if not args.scan and not args.output: parser.error('打包需要 --output，或使用 --scan')
-    failures=0
-    session = ScanSession()
-    for source in args.scripts:
-        p=Path(source); paths=sorted(p.rglob('*.nk')) if p.is_dir() else [p]
-        for path in paths:
-            try:
-                plan=session.scan(path); print(f'{path}: {len(plan.assets)} references, {plan.size/1048576:.1f} MiB')
-                for a in plan.assets: print(f'  {a.status}: {a.node}.{a.knob} {a.raw} {a.note}')
-                for w in plan.warnings: print('  Warning:',w)
-                for plugin in plan.plugins: print(f'  {plugin.status}: {plugin.name} {plugin.source} {plugin.note}')
-                if any(status_code(a.status) != 'ready' for a in plan.assets) or plan.plugin_blockers: failures+=1
-                if not args.scan: print('Saved:',package(plan,args.output))
-            except Exception as e: failures+=1; print('Error:',path,e)
-    return 1 if failures else 0
-if __name__=='__main__': raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())

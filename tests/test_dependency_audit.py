@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import DependencyError, package, scan
-from scan_cache import ScanSession
+from wrapitupiso.engine.core import DependencyError, package, scan
+from wrapitupiso.engine.scan_cache import ScanSession
 
 
 class DependencyAuditTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class DependencyAuditTests(unittest.TestCase):
         self.plugins = self.root / 'plugins'
         self.plugins.mkdir()
         self.script = self.root / 'shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[self.plugins])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.plugins])
         defaults.start()
         self.addCleanup(defaults.stop)
 
@@ -81,7 +81,7 @@ class DependencyAuditTests(unittest.TestCase):
         (first / 'Demo.gizmo').write_text('Gizmo {\n}\nend_group\n')
         (second / 'Demo.dll').write_bytes(b'fixture')
         self.script.write_text('Demo {\n}\n')
-        with patch('gizmo.default_paths', return_value=[first, second]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[first, second]):
             plan = scan(self.script, automatic_plugins=True)
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'mixed')

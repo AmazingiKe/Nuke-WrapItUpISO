@@ -1,12 +1,12 @@
 import tempfile, unittest, json
 from unittest.mock import patch
 from pathlib import Path
-from core import scan, package, Cancelled, DependencyError
+from wrapitupiso.engine.core import scan, package, Cancelled, DependencyError
 
 class PackagingTests(unittest.TestCase):
     def test_corrupted_original_path_copy_fails_verification_and_cleans_output(self):
         plan = scan(self.script)
-        with patch('core.shutil.copyfile', side_effect=lambda source, target: target.write_bytes(b'corrupt')):
+        with patch('wrapitupiso.engine.core.shutil.copyfile', side_effect=lambda source, target: target.write_bytes(b'corrupt')):
             with self.assertRaisesRegex(DependencyError, '打包文件校验失败'):
                 package(plan, self.root / 'corrupt')
         self.assertEqual(list((self.root / 'corrupt').iterdir()), [])
@@ -161,7 +161,7 @@ Write {
     def test_command_blocks_and_builtin_warning_noise(self):
         names='Retime Colorspace Input Remove Keyer Expression ShuffleCopy Output Cryptomatte Multiply Keymix HueCorrect Copy Denoise2 Defocus AddChannels Invert Grain2 ColorLookup NoTimeBlur AdjBBox CopyBBox STMap TimeBlur'.split()
         self.script.write_text('define_window_layout_xml {\n <layout>fake</layout>\n}\nadd_layer {rgba red green blue alpha}\n' + ''.join(f'{cls} {{\n name {cls}1\n}}\n' for cls in names) + 'MyCustom {\n name one\n}\nMyCustom {\n name two\n}\n')
-        with patch('gizmo.default_paths', return_value=[]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[]):
             plan=scan(self.script)
         self.assertEqual(len(plan.warnings),2)
         self.assertIn('MyCustom × 2',' '.join(plan.warnings))
@@ -198,7 +198,7 @@ Write {
         plan = scan(self.script)
         def cancel_after_copy(*args):
             raise Cancelled()
-        with patch('core.shutil.rmtree', side_effect=PermissionError('directory locked')):
+        with patch('wrapitupiso.engine.core.shutil.rmtree', side_effect=PermissionError('directory locked')):
             with self.assertRaisesRegex(RuntimeError, '未完成目录清理失败') as error:
                 package(plan, self.root / 'locked', progress=cancel_after_copy)
         remaining = list((self.root / 'locked').iterdir())
@@ -220,7 +220,7 @@ Write {
             original_rmtree(stage)
         def cancel_after_copy(*args):
             raise Cancelled()
-        with patch('core.shutil.rmtree', side_effect=readonly_cleanup):
+        with patch('wrapitupiso.engine.core.shutil.rmtree', side_effect=readonly_cleanup):
             with self.assertRaises(Cancelled):
                 package(plan, self.root / 'readonly', progress=cancel_after_copy)
         self.assertEqual(list((self.root / 'readonly').iterdir()), [])

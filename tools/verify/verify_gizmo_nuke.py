@@ -1,6 +1,6 @@
 """Integration check using an installed Nuke; only executes generated fixtures.
 
-python tools/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe" [--gui]
+python tools/verify/verify_gizmo_nuke.py --nuke "C:/Program Files/Nuke15.1v5/Nuke15.1.exe" [--gui]
 """
 import argparse
 import json
@@ -13,9 +13,9 @@ import tempfile
 import zlib
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import package
-from scan_cache import ScanSession
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from wrapitupiso.engine.core import package
+from wrapitupiso.engine.scan_cache import ScanSession
 
 
 def verify(nuke, gui=False):
@@ -36,7 +36,7 @@ def verify(nuke, gui=False):
         script.write_text('version 15.1 v5\nRoot {\n}\nOuter {\n inputs 0\n name Outer1\n}\n'
                           'Group {\n inputs 0\n name InlineFiles\n addUserKnob {2 texture}\n texture texture.png\n}\nend_group\n'
                           + '"' + (source / 'Outer.gizmo').as_posix() + '" {\n inputs 0\n name PathOuter1\n}\n')
-        with patch('gizmo.default_paths', return_value=[source]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[source]):
             session = ScanSession()
             plan = session.scan(script)
             assert session.scan(script, reuse=True) is plan

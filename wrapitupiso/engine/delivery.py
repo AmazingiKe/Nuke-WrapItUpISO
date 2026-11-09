@@ -1,5 +1,5 @@
 """Render the absolute and portable project variants from the same copy plan."""
-from i18n import status_code, status_message
+from wrapitupiso.config.i18n import status_code, status_message
 
 # FreeType scans this knob's literal value while loading Text2, before evaluating
 # File_Knob expressions. Resolve just our generated fonts path before those nodes.
@@ -31,7 +31,7 @@ def apply_edits(text, edits):
 
 
 def project_settings(text, target, *, relative, fonts):
-    from core import knobs, node_blocks
+    from wrapitupiso.engine.core import knobs, node_blocks
     values = {'project_directory': '"[file dirname [value root.name]]"' if relative else path_word(target)}
     if fonts:
         values['free_type_font_path'] = path_word('fonts', relative=True) if relative else literal_word(target / 'fonts')

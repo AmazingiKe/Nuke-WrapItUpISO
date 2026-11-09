@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import DependencyError, package, scan
+from wrapitupiso.engine.core import DependencyError, package, scan
 
 
 GLOW_CALLBACK = """
@@ -30,7 +30,7 @@ class CallbackTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.script = self.root / 'shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[self.root])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.root])
         defaults.start()
         self.addCleanup(defaults.stop)
 

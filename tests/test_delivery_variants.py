@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import package, scan
-from scan_cache import ScanSession
+from wrapitupiso.engine.core import package, scan
+from wrapitupiso.engine.scan_cache import ScanSession
 
 
 class DeliveryVariantTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class DeliveryVariantTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.script = self.root / '中文 shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[])
         defaults.start()
         self.addCleanup(defaults.stop)
 
@@ -151,7 +151,7 @@ class DeliveryVariantTests(unittest.TestCase):
         plugin_root = self.root / 'plugins'
         font = self.asset('registered/font.ttf')
         self.asset('plugins/init.py', b"import nuke\nnuke.pluginAddPath('../registered')\n")
-        with patch('gizmo.default_paths', return_value=[plugin_root]):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[plugin_root]):
             target, report, _, _ = self.collect('Text2 {\n font {{ Test : Regular : font.ttf : 0 }}\n}\n')
         self.assertEqual(report['assets'][0]['status'], '就绪')
         self.assertEqual((target / report['assets'][0]['packed_path']).read_bytes(), font.read_bytes())
@@ -159,7 +159,7 @@ class DeliveryVariantTests(unittest.TestCase):
     def test_absolute_gizmo_alias_cannot_overwrite_an_existing_relative_class(self):
         self.asset('plugins/Demo.gizmo', b'Gizmo {\n}\nend_group\n')
         self.asset('plugins/Demo_relinked.gizmo', b'Gizmo {\n label other\n}\nend_group\n')
-        with patch('gizmo.default_paths', return_value=[self.root / 'plugins']):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.root / 'plugins']):
             target, report, absolute, relative = self.collect('Demo {\n}\nDemo_relinked {\n}\n')
         paths = [p[key] for p in report['plugins'] for key in ('packed_path', 'absolute_packed_path')]
         self.assertEqual(len(set(paths)), 4)

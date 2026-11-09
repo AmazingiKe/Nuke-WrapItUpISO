@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import DependencyError, node_blocks, package, scan
-from scan_cache import ScanSession
+from wrapitupiso.engine.core import DependencyError, node_blocks, package, scan
+from wrapitupiso.engine.scan_cache import ScanSession
 
 
 class GizmoPathReferenceTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class GizmoPathReferenceTests(unittest.TestCase):
         self.plugins = self.root / 'registered'
         self.plugins.mkdir()
         self.script = self.root / 'shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[self.plugins])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.plugins])
         defaults.start()
         self.addCleanup(defaults.stop)
 

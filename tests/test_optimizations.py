@@ -7,10 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import core
-import gizmo
-
-
+from wrapitupiso.engine import core
+from wrapitupiso.engine import gizmo
 class OptimizationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -23,14 +21,14 @@ class OptimizationTests(unittest.TestCase):
         self.script = self.root / 'shot.nk'
         self.script.write_text('Read {\n file plate.%04d.exr\n first 1\n last 2\n}\nDemo {\n}\n')
         (self.root / 'plate.0001.exr').write_bytes(b'pixels')
-        defaults = patch('gizmo.default_paths', return_value=[self.library])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.library])
         defaults.start()
         self.addCleanup(defaults.stop)
 
     def test_destination_media_is_read_once_and_hash_is_verified(self):
         plan = core.scan(self.script)
         updates = []
-        with patch('gizmo.digest_file', wraps=gizmo.digest_file) as digest:
+        with patch('wrapitupiso.engine.gizmo.digest_file', wraps=gizmo.digest_file) as digest:
             target = core.package(plan, self.root / 'out', verify_progress=lambda *v: updates.append(v))
         reads = [c.args[0] for c in digest.call_args_list if 'media' in Path(c.args[0]).parts]
         self.assertEqual(len(reads), 1)
@@ -54,20 +52,20 @@ class OptimizationTests(unittest.TestCase):
         self.assertEqual(list((self.root / 'out').iterdir()), [])
 
     def test_batch_shares_index_and_reuses_unchanged_plan(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         session = ScanSession()
-        with patch('gizmo.index_plugins', wraps=gizmo.index_plugins) as index:
+        with patch('wrapitupiso.engine.gizmo.index_plugins', wraps=gizmo.index_plugins) as index:
             first = session.scan(self.script)
             second = self.root / 'second.nk'
             second.write_text(self.script.read_text())
             session.scan(second)
             self.assertEqual(index.call_count, 1)
-            with patch('core.scan', side_effect=AssertionError('unexpected rescan')):
+            with patch('wrapitupiso.engine.core.scan', side_effect=AssertionError('unexpected rescan')):
                 self.assertIs(session.scan(second, reuse=True), session.plans[second])
         self.assertIsNotNone(first)
 
     def test_cache_invalidates_new_frames_missing_files_and_same_size_documents(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         session = ScanSession()
         first = session.scan(self.script)
         self.assertEqual(first.assets[0].status, '缺帧')
@@ -84,7 +82,7 @@ class OptimizationTests(unittest.TestCase):
         self.assertEqual(session.scan(self.script, reuse=True).assets[0].missing, [1])
 
     def test_cache_invalidates_plugin_addition_config_and_environment(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         session = ScanSession()
         self.script.write_text('Missing {\n}\n')
         first = session.scan(self.script)
@@ -100,7 +98,7 @@ class OptimizationTests(unittest.TestCase):
             self.assertIsNot(current, session.scan(self.script, reuse=True))
 
     def test_background_discovery_deduplicates_nested_roots_and_can_cancel(self):
-        from project_discovery import DiscoveryWorker
+        from wrapitupiso.engine.project_discovery import DiscoveryWorker
         nested = self.root / 'nested'
         nested.mkdir()
         (nested / 'other.NK').write_text('Root {\n}\n')
@@ -118,7 +116,7 @@ class OptimizationTests(unittest.TestCase):
         self.assertFalse(any(k == 'discovered' for k, _ in list(worker.events.queue)))
 
     def test_unreadable_or_cancelled_snapshot_is_never_reused(self):
-        from scan_cache import Snapshot, ScanSession
+        from wrapitupiso.engine.scan_cache import Snapshot, ScanSession
         snapshot = Snapshot()
         with patch.object(Path, 'stat', side_effect=PermissionError): snapshot.watch(self.script)
         self.assertFalse(snapshot.valid())
@@ -132,7 +130,7 @@ class OptimizationTests(unittest.TestCase):
         with self.assertRaises(core.Cancelled): session.scan(self.script, reuse=True, cancel=lambda: True)
 
     def test_nested_plugin_addition_and_new_default_directory_invalidate(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         nested = self.library / 'nested'
         nested.mkdir()
         (self.library / 'init.py').write_text("import nuke\nnuke.pluginAddPath('nested')")
@@ -144,7 +142,7 @@ class OptimizationTests(unittest.TestCase):
         home = self.root / 'home'
         home.mkdir()
         nuke = home / '.nuke'
-        with patch('gizmo.default_paths', return_value=[nuke]), patch.object(Path, 'home', return_value=home):
+        with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[nuke]), patch.object(Path, 'home', return_value=home):
             session = ScanSession()
             first = session.scan(self.script)
             self.assertEqual(first.plugins[0].status, '未找到')
@@ -153,7 +151,7 @@ class OptimizationTests(unittest.TestCase):
             self.assertEqual(session.scan(self.script, reuse=True).plugins[0].status, '就绪')
 
     def test_cache_tracks_failed_candidates_and_project_text_changes(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         session = ScanSession()
         self.plugin.write_text('not a gizmo')
         first = session.scan(self.script)
@@ -169,7 +167,7 @@ class OptimizationTests(unittest.TestCase):
         self.assertEqual(session.scan(self.script, reuse=True).assets[0].status, '就绪')
 
     def test_folder_discovery_reports_errors_and_handles_backpressure_cancel(self):
-        from project_discovery import DiscoveryWorker
+        from wrapitupiso.engine.project_discovery import DiscoveryWorker
         events = Queue()
         worker = DiscoveryWorker([self.root / 'absent.nk'], events)
         worker.run()
@@ -179,13 +177,13 @@ class OptimizationTests(unittest.TestCase):
         worker.cancelled.set()
         worker.emit('discovered', [self.script])
         self.assertEqual(worker.events.qsize(), 20)
-        with patch('project_discovery.os.walk', side_effect=PermissionError('denied')):
+        with patch('wrapitupiso.engine.project_discovery.os.walk', side_effect=PermissionError('denied')):
             worker = DiscoveryWorker([self.root], Queue())
             worker.run()
         self.assertTrue(any(k == 'message' for k, _ in list(worker.events.queue)))
 
     def test_changes_during_scan_are_retried_and_unstable_scans_are_rejected(self):
-        from scan_cache import ScanSession
+        from wrapitupiso.engine.scan_cache import ScanSession
         session = ScanSession()
         def finish_frame(done, total, name):
             if total and done == total:

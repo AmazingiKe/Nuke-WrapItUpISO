@@ -1,5 +1,5 @@
 """Collect font files without importing Nuke or evaluating project expressions."""
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 import re
@@ -21,7 +21,7 @@ def font_files(source, media_index):
 
 
 def search_folders(plan, cancel):
-    from core import node_blocks, knobs, resolve
+    from wrapitupiso.engine.core import node_blocks, knobs, resolve
     folders, errors, system_fonts = [], [], True
     for cls, pos, body in node_blocks(plan.text):
         if cls != 'Root':
@@ -40,8 +40,8 @@ def search_folders(plan, cancel):
     folders.append(Path.home() / '.nuke' / 'fonts')
     plugin_folders = plan.search_paths
     if not plugin_folders:
-        from gizmo import default_paths
-        from plugin_paths import discover_paths
+        from wrapitupiso.engine.gizmo import default_paths
+        from wrapitupiso.engine.plugin_paths import discover_paths
         discovered = discover_paths(default_paths(), cancel, observe=plan.snapshot.watch if plan.snapshot else None)
         plugin_folders = discovered.paths
         errors.extend(discovered.errors)
@@ -74,7 +74,7 @@ def search_folders(plan, cancel):
 
 
 def collect_fonts(plan, cancel, media_index):
-    from core import Asset, Cancelled, Token, knobs, node_blocks, resolve
+    from wrapitupiso.engine.core import Asset, Cancelled, Token, knobs, node_blocks, resolve
     documents = []
     for owner, (text, _, _) in plan.documents.items():
         nodes = []

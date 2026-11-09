@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from project_picker import (NativeProjectDialog, DialogEvents, valid_projects,
+from wrapitupiso.ui.project_picker import (NativeProjectDialog, DialogEvents, valid_projects,
                             invoke, release, guid, EVENTS, CONTROLS, UNKNOWN, P, PP, H, U)
 
 class ProjectPickerTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ProjectPickerTests(unittest.TestCase):
     def test_callback_failure_never_crosses_com_boundary(self):
         owner = Mock(); owner.selected_items.side_effect = OSError('无法访问')
         events = DialogEvents(owner)
-        with patch('project_picker.show_native_error') as error:
+        with patch('wrapitupiso.ui.project_picker.show_native_error') as error:
             self.assertEqual(events.on_button(None, None, 1001), 0)
         error.assert_called_once()
         owner.close.assert_not_called()

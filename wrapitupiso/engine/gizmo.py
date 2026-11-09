@@ -1,6 +1,6 @@
 """Static Gizmo dependency collection. Never import a source init/menu script."""
-from i18n import status_code, status_message
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import status_code, status_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 from dataclasses import dataclass, field
 import hashlib
 import os
@@ -22,7 +22,7 @@ class Plugin:
 
 
 def digest_file(path, cancel=lambda: False, progress=None):
-    from core import Cancelled
+    from wrapitupiso.engine.core import Cancelled
     digest = hashlib.sha256()
     done = 0
     with Path(path).open('rb') as stream:
@@ -42,7 +42,7 @@ def default_paths():
 
 
 def index_plugins(paths, cancel, progress, *, observe=None):
-    from core import Cancelled
+    from wrapitupiso.engine.core import Cancelled
     index, errors, visited = {}, [], set()
     for root in paths:
         if cancel():
@@ -73,7 +73,7 @@ def index_plugins(paths, cancel, progress, *, observe=None):
 
 def file_knobs(text):
     """File controls and link controls forwarding a known file knob."""
-    from core import node_blocks, declared_file_knobs
+    from wrapitupiso.engine.core import node_blocks, declared_file_knobs
     for cls, pos, body in node_blocks(text):
         # Only the outer definition declares knobs visible on Gizmo instances.
         return declared_file_knobs(body)
@@ -81,7 +81,7 @@ def file_knobs(text):
 
 
 def validate_definition(text):
-    from core import node_blocks, words
+    from wrapitupiso.engine.core import node_blocks, words
     blocks = list(node_blocks(text))
     if not blocks or blocks[0][0] not in {'Gizmo', 'Group'}:
         raise ValueError(msg('gizmo.no_definition'))
@@ -110,8 +110,8 @@ def validate_definition(text):
 
 def code_dependencies(text):
     """Flag executable callbacks that static collection cannot prove portable."""
-    from core import node_blocks, knobs, words
-    from callback_scan import is_ui_callback
+    from wrapitupiso.engine.core import node_blocks, knobs, words
+    from wrapitupiso.engine.callback_scan import is_ui_callback
     reasons = []
     callbacks = {'onCreate', 'onScriptLoad', 'knobChanged', 'updateUI', 'autolabel',
                  'beforeRender', 'afterRender', 'beforeFrameRender', 'afterFrameRender',
@@ -146,8 +146,8 @@ def code_dependencies(text):
 
 
 def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None):
-    from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs, is_gizmo_reference
-    from plugin_paths import discover_paths
+    from wrapitupiso.engine.core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs, is_gizmo_reference
+    from wrapitupiso.engine.plugin_paths import discover_paths
     plan.warnings.append(msg('validation.scope'))
     roots = default_paths()
     if plan.snapshot:
@@ -157,7 +157,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     found, active, custom_knobs = {}, [], {}
     plan.documents[str(plan.script)] = (plan.text, plan.encoding, hashlib.sha256(plan.text.encode(plan.encoding)).hexdigest())
     def inspect_code(text, owner):
-        from script_scan import inspect_commands
+        from wrapitupiso.engine.script_scan import inspect_commands
         commands, uncertain = inspect_commands(text)
         reviews = [fmt('{value0} / {value1}', value0=owner, value1=reason) for reason in code_dependencies(text) + uncertain]
         plan.script_warnings.extend(reviews)
@@ -356,7 +356,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
 
 
 def reference_edits(text, plugins, *, aliases=None):
-    from core import node_blocks
+    from wrapitupiso.engine.core import node_blocks
     if aliases is None:
         aliases = {p.name: p.packed_name for p in plugins if status_code(p.status) == 'ready' and p.packed_name}
     return [(token.start, token.end, aliases[name])
@@ -364,14 +364,14 @@ def reference_edits(text, plugins, *, aliases=None):
 
 
 def check_sources(plan, cancel):
-    from core import DependencyError
+    from wrapitupiso.engine.core import DependencyError
     for path, (_, _, digest) in plan.documents.items():
         if digest_file(path, cancel) != digest:
             raise DependencyError(msg('verify.source_changed', path=path))
 
 
 def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, absolute_edits=None, aliases=None):
-    from core import DependencyError, Cancelled
+    from wrapitupiso.engine.core import DependencyError, Cancelled
     records = []
     if plan.plugins:
         folder = stage / 'gizmos'
@@ -389,7 +389,7 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
             path.write_bytes(text.encode(encoding))
             absolute_path = None
             if absolute_edits is not None:
-                from delivery import apply_edits
+                from wrapitupiso.engine.delivery import apply_edits
                 absolute_path = folder / (aliases[plugin.name] + '.gizmo')
                 absolute_path.write_bytes(apply_edits(plan.documents[plugin.source][0], absolute_edits.get(plugin.source, [])).encode(encoding))
             records.append({'name': plugin.name, 'original_reference': plugin.name, 'packed_class': plugin.packed_name or plugin.name, 'source': plugin.source, 'source_sha256': plugin.sha256, 'packed_path': path.relative_to(stage).as_posix(), 'status': msg('status.collected'), 'absolute_packed_path': absolute_path.relative_to(stage).as_posix() if absolute_path else None, 'absolute_packed_class': aliases[plugin.name] if absolute_path else None, 'dependencies': plugin.dependencies, 'used_by': plugin.used_by, 'candidates': plugin.candidates})

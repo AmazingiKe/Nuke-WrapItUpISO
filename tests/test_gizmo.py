@@ -9,7 +9,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from core import Cancelled, scan, package
+from wrapitupiso.engine.core import Cancelled, scan, package
 
 
 class GizmoTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class GizmoTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.plugins = self.root / 'plugins'
         self.plugins.mkdir()
-        defaults = patch('gizmo.default_paths', return_value=[self.plugins])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[self.plugins])
         self.default_paths = defaults.start()
         self.addCleanup(defaults.stop)
         self.script = self.root / 'shot.nk'
@@ -116,7 +116,7 @@ class GizmoTests(unittest.TestCase):
         with patch.dict(os.environ, {'NUKE_PATH': str(self.plugins)}):
             plan = scan(self.script)
         self.assertEqual(plan.plugins[0].status, '就绪')
-        from core import Cancelled
+        from wrapitupiso.engine.core import Cancelled
         with self.assertRaises(Cancelled):
             self.scan(cancel=lambda: True)
 
@@ -208,12 +208,12 @@ class GizmoTests(unittest.TestCase):
     def test_package_integrity_failure_cleans_output(self):
         self.gizmo('Outer')
         plan = self.scan()
-        from gizmo import finish_bundle
+        from wrapitupiso.engine.gizmo import finish_bundle
         def corrupt(plan, stage, edits, hashes, cancel, verify_progress=None, **kwargs):
             (stage / 'bad.exr').write_bytes(b'wrong')
             hashes['bad.exr'] = hashlib.sha256(b'expected').hexdigest()
             return finish_bundle(plan, stage, edits, hashes, cancel, **kwargs)
-        with patch('gizmo.finish_bundle', side_effect=corrupt):
+        with patch('wrapitupiso.engine.gizmo.finish_bundle', side_effect=corrupt):
             with self.assertRaisesRegex(RuntimeError, '校验失败'):
                 package(plan, self.root / 'corrupt')
         self.assertEqual(list((self.root / 'corrupt').iterdir()), [])
@@ -226,7 +226,7 @@ class GizmoTests(unittest.TestCase):
         self.assertFalse(sentinel.exists())
 
     def test_source_changes_during_scan_block_delivery(self):
-        import core
+        from wrapitupiso.engine import core
         original_scan = core._scan_media
         gizmo = self.gizmo('Outer')
         for changed in (self.script, gizmo):
@@ -239,7 +239,7 @@ class GizmoTests(unittest.TestCase):
                         with changed.open('a', encoding='utf-8') as stream:
                             stream.write('# changed by another process\n')
                     return result
-                with patch('core._scan_media', side_effect=scan_and_change):
+                with patch('wrapitupiso.engine.core._scan_media', side_effect=scan_and_change):
                     plan = self.scan()
                 self.assertTrue(plan.plugin_blockers)
                 with self.assertRaisesRegex(RuntimeError, '变化'):
@@ -247,7 +247,7 @@ class GizmoTests(unittest.TestCase):
                 self.assertFalse((self.root / 'changed').exists())
 
     def test_plugin_read_error_and_disappearing_file_are_reported(self):
-        import core
+        from wrapitupiso.engine import core
         gizmo = self.gizmo('Outer')
         original_open = Path.open
         def denied(path, *args, **kwargs):
@@ -265,7 +265,7 @@ class GizmoTests(unittest.TestCase):
             if Path(path) == gizmo:
                 gizmo.unlink()
             return result
-        with patch('core._scan_media', side_effect=scan_then_remove):
+        with patch('wrapitupiso.engine.core._scan_media', side_effect=scan_then_remove):
             plan = self.scan()
         self.assertEqual(plan.plugins[0].status, '待核对')
         with self.assertRaises(RuntimeError):
@@ -281,7 +281,7 @@ class GizmoTests(unittest.TestCase):
                     yield next(entries)
                     raise PermissionError(13, 'access denied', str(root))
                 yield partial()
-        with patch('gizmo.os.scandir', side_effect=read_with_failure):
+        with patch('wrapitupiso.engine.gizmo.os.scandir', side_effect=read_with_failure):
             plan = self.scan()
         self.assertIn('插件目录读取失败', ' '.join(plan.plugin_errors))
         with self.assertRaises(RuntimeError):
@@ -323,10 +323,10 @@ class GizmoTests(unittest.TestCase):
         with self.assertRaises(Cancelled):
             self.scan(cancel=lambda: stop, progress=progress)
         plan = self.scan()
-        from gizmo import finish_bundle
+        from wrapitupiso.engine.gizmo import finish_bundle
         def cancel_at_write(plan, stage, edits, hashes, cancel, verify_progress=None, **kwargs):
             return finish_bundle(plan, stage, edits, hashes, lambda: True, **kwargs)
-        with patch('gizmo.finish_bundle', side_effect=cancel_at_write):
+        with patch('wrapitupiso.engine.gizmo.finish_bundle', side_effect=cancel_at_write):
             with self.assertRaises(Cancelled):
                 package(plan, self.root / 'cancelled')
         self.assertEqual(list((self.root / 'cancelled').iterdir()), [])

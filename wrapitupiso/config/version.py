@@ -1,9 +1,9 @@
 """Shared version metadata for the source app and PyInstaller bundle."""
 import json
-from pathlib import Path
+from wrapitupiso.config.paths import bundle_root
 
 METADATA = json.loads(
-    Path(__file__).with_name('version.json').read_text(encoding='utf-8')
+    (bundle_root() / 'version.json').read_text(encoding='utf-8')
 )
 APP_NAME = METADATA['name']
 VERSION = METADATA['version']

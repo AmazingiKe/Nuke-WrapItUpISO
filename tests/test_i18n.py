@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from i18n import (CATALOG, LANGUAGES, Translator, message, join_messages, error_message,
+from wrapitupiso.config.i18n import (CATALOG, LANGUAGES, Translator, message, join_messages, error_message,
                   normalize_language, validate_catalog, status_code, status_message)
 
 

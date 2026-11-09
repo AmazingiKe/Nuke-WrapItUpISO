@@ -12,9 +12,10 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMainWindow
 
-import app
-from app import Window, Worker, TransferMeter, ensure_application
-from core import Cancelled
+from wrapitupiso.ui import workers
+from wrapitupiso.ui.window import Window, ensure_application
+from wrapitupiso.ui.workers import Worker, TransferMeter
+from wrapitupiso.engine.core import Cancelled
 
 
 class WindowTests(unittest.TestCase):
@@ -33,7 +34,7 @@ class WindowTests(unittest.TestCase):
         self.window = Window(settings_path=self.settings_path, system_language='zh_CN')
         self.window.show()
         self.qt.processEvents()
-        defaults = patch('gizmo.default_paths', return_value=[])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[])
         self.default_paths = defaults.start()
         self.addCleanup(defaults.stop)
 
@@ -168,13 +169,13 @@ class WindowTests(unittest.TestCase):
 
     def test_busy_rejects_language_switch(self):
         blocker = threading.Event()
-        original = app.scan
+        original = workers.scan
         def slow_scan(*args, **kwargs):
             blocker.wait(2)
             return original(*args, **kwargs)
         self.window.add([self.source])
         self.wait_finished()
-        with patch('app.scan', side_effect=slow_scan):
+        with patch('wrapitupiso.ui.workers.scan', side_effect=slow_scan):
             self.window.scan_only()
             self.assertFalse(self.window.language_menu.isEnabled())
             self.window.set_language('ja')
@@ -288,16 +289,16 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(self.window.session.plans)
 
     def test_validation_and_dialogs(self):
-        with patch('app.QMessageBox.information') as info:
+        with patch('wrapitupiso.ui.window.QMessageBox.information') as info:
             self.window.scan_only(); self.window.pack()
             self.assertEqual(info.call_count, 2)
-        with patch('app.ask_projects', return_value=[self.source]) as picker:
+        with patch('wrapitupiso.ui.window.ask_projects', return_value=[self.source]) as picker:
             self.window.choose_projects(); self.wait_finished()
             picker.assert_called_once()
-        with patch('app.ask_projects', side_effect=OSError('bad dialog')), patch('app.QMessageBox.critical') as error:
+        with patch('wrapitupiso.ui.window.ask_projects', side_effect=OSError('bad dialog')), patch('wrapitupiso.ui.window.QMessageBox.critical') as error:
             self.window.choose_projects()
             error.assert_called_once()
-        with patch('app.QFileDialog.getExistingDirectory', return_value=str(self.folder)):
+        with patch('wrapitupiso.ui.window.QFileDialog.getExistingDirectory', return_value=str(self.folder)):
             self.window.choose_output()
         self.assertEqual(self.window.output_entry.text(), str(self.folder))
 
@@ -313,8 +314,8 @@ class WindowTests(unittest.TestCase):
         self.assertIn('失败 1', self.window.total_text.text())
 
     def test_native_picker_is_owned_by_qt_window(self):
-        from project_picker import ask_projects
-        with patch('project_picker.NativeProjectDialog') as dialog:
+        from wrapitupiso.ui.project_picker import ask_projects
+        with patch('wrapitupiso.ui.project_picker.NativeProjectDialog') as dialog:
             instance = dialog.return_value.__enter__.return_value
             instance.show.return_value = [self.source]
             self.assertEqual(ask_projects(self.window, self.folder), [self.source])
@@ -326,7 +327,7 @@ class WindowTests(unittest.TestCase):
         def slow_scan(path, cancel, progress, **kwargs):
             progress(1, 4, 'plate'); entered.set(); release.wait(3)
             raise Cancelled()
-        with patch('app.scan', side_effect=slow_scan):
+        with patch('wrapitupiso.ui.workers.scan', side_effect=slow_scan):
             self.window.scan_only()
             try:
                 self.assertTrue(entered.wait(2))
@@ -350,7 +351,7 @@ class WindowTests(unittest.TestCase):
         def slow_scan(*args, **kwargs):
             entered.set(); release.wait(3)
             raise Cancelled()
-        with patch('app.scan', side_effect=slow_scan):
+        with patch('wrapitupiso.ui.workers.scan', side_effect=slow_scan):
             self.window.scan_only()
             try:
                 self.assertTrue(entered.wait(2))
@@ -363,13 +364,13 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(self.window.poll_timer.isActive())
 
     def test_background_discovery_can_be_cancelled(self):
-        import project_discovery
+        from wrapitupiso.engine import project_discovery
         entered, release = threading.Event(), threading.Event()
         original = project_discovery.os.walk
         def slow_walk(*args, **kwargs):
             entered.set(); release.wait(3)
             yield from original(*args, **kwargs)
-        with patch('project_discovery.os.walk', side_effect=slow_walk):
+        with patch('wrapitupiso.engine.project_discovery.os.walk', side_effect=slow_walk):
             self.window.add([self.folder])
             try:
                 self.assertTrue(entered.wait(2))
@@ -383,25 +384,25 @@ class WindowTests(unittest.TestCase):
         self.assertIn('取消', self.window.progress_text.text())
 
     def test_scan_cache_and_open_results(self):
-        with patch('app.scan', wraps=app.scan) as scanned:
+        with patch('wrapitupiso.ui.workers.scan', wraps=workers.scan) as scanned:
             self.add_scan(); self.pack()
             self.assertEqual(scanned.call_count, 1)
         target = self.window.packaged_paths[self.source]
-        with patch('app.QDesktopServices.openUrl', return_value=True) as opened:
+        with patch('wrapitupiso.ui.window.QDesktopServices.openUrl', return_value=True) as opened:
             self.window.open_result()
             self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), target)
             self.window.open_result(readme=True)
             self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), target / 'readme.md')
-        with patch('app.QDesktopServices.openUrl', return_value=False): self.window.open_result()
+        with patch('wrapitupiso.ui.window.QDesktopServices.openUrl', return_value=False): self.window.open_result()
         self.assertIn('打开失败', self.log())
 
     def test_rescan_and_failed_repack_keep_previous_output(self):
         self.add_scan(); self.pack()
         target = self.window.packaged_paths[self.source]
-        with patch('app.scan', wraps=app.scan) as scanned:
+        with patch('wrapitupiso.ui.workers.scan', wraps=workers.scan) as scanned:
             self.window.scan_only(); self.wait_finished()
             self.assertEqual(scanned.call_count, 1)
-        with patch('app.package', side_effect=PermissionError('blocked')): self.pack()
+        with patch('wrapitupiso.ui.workers.package', side_effect=PermissionError('blocked')): self.pack()
         self.assertEqual(self.window.packaged_paths[self.source], target)
         self.assertTrue(self.window.open_readme_button.isEnabled())
         self.assertIn('无法访问', self.log())
@@ -412,7 +413,7 @@ class WindowTests(unittest.TestCase):
     def test_source_change_invalidates_cache_and_failed_pack_has_no_result(self):
         self.add_scan()
         (self.folder / 'plate.exr').unlink()
-        with patch('app.scan', wraps=app.scan) as scanned, patch('app.package', side_effect=PermissionError()):
+        with patch('wrapitupiso.ui.workers.scan', wraps=workers.scan) as scanned, patch('wrapitupiso.ui.workers.package', side_effect=PermissionError()):
             self.pack()
             self.assertEqual(scanned.call_count, 1)
         self.assertFalse(self.window.packaged_paths)
@@ -455,8 +456,8 @@ class WindowTests(unittest.TestCase):
         while not worker.events.empty(): events.append(worker.events.get_nowait())
         self.assertEqual(events[-1][1][:3], ('复制文件', 1.5, 2))
         meter = TransferMeter()
-        with patch('app.time.monotonic', return_value=10): meter.reset()
-        with patch('app.time.monotonic', return_value=12):
+        with patch('wrapitupiso.ui.workers.time.monotonic', return_value=10): meter.reset()
+        with patch('wrapitupiso.ui.workers.time.monotonic', return_value=12):
             self.assertIn('8 秒', meter.describe(2 * 1048576, 10 * 1048576))
 
 

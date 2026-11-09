@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import scan, package, Cancelled, DependencyError
-from plugin_paths import discover_paths
-from scan_cache import ScanSession
-from app import Worker
+from wrapitupiso.engine.core import scan, package, Cancelled, DependencyError
+from wrapitupiso.engine.plugin_paths import discover_paths
+from wrapitupiso.engine.scan_cache import ScanSession
+from wrapitupiso.ui.workers import Worker
 
 
 class ReviewFixTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class ReviewFixTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.script = self.root / 'shot.nk'
-        defaults = patch('gizmo.default_paths', return_value=[])
+        defaults = patch('wrapitupiso.engine.gizmo.default_paths', return_value=[])
         self.defaults = defaults.start()
         self.addCleanup(defaults.stop)
 

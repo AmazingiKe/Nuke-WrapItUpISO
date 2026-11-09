@@ -14,11 +14,11 @@ import tempfile
 import zlib
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import scan, package
-from gizmo import default_paths
-from plugin_paths import discover_paths
-from scan_cache import ScanSession
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from wrapitupiso.engine.core import scan, package
+from wrapitupiso.engine.gizmo import default_paths
+from wrapitupiso.engine.plugin_paths import discover_paths
+from wrapitupiso.engine.scan_cache import ScanSession
 
 
 def verify(nuke):

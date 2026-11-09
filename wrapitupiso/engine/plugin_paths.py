@@ -1,5 +1,5 @@
 """Read common startup path declarations without importing or executing scripts."""
-from i18n import message as msg, fmt, join_messages, error_message
+from wrapitupiso.config.i18n import message as msg, fmt, join_messages, error_message
 import ast
 from dataclasses import dataclass, field
 import os
@@ -37,7 +37,7 @@ class StartupReader:
         self.steps = 0
 
     def walk_directories(self, path):
-        from core import Cancelled
+        from wrapitupiso.engine.core import Cancelled
         path = path if path.is_absolute() else self.source.parent / path
         if self.observe: self.observe(path)
         rows, entries = [], 0
@@ -196,7 +196,7 @@ class StartupReader:
                             if self.observe: self.observe(absolute)
                             return getattr(absolute, method)()
                         if method == 'iterdir':
-                            from core import Cancelled
+                            from wrapitupiso.engine.core import Cancelled
                             if self.observe: self.observe(absolute)
                             items = []
                             with os.scandir(absolute) as entries:
@@ -250,7 +250,7 @@ class StartupReader:
                 self.pending(self.functions[child.func.id], visited)
 
     def statements(self, statements, depth=0):
-        from core import Cancelled
+        from wrapitupiso.engine.core import Cancelled
         if depth > 32:
             raise Unknown(msg('config.depth'))
         for node in statements:
@@ -343,7 +343,7 @@ class StartupReader:
 
 
 def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, observe=None):
-    from core import Cancelled
+    from wrapitupiso.engine.core import Cancelled
     result = Discovery()
     seen, processed = set(), set()
 

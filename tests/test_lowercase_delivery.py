@@ -6,8 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core import node_blocks, package, scan
-from font_scan import font_destinations
+from wrapitupiso.engine.core import node_blocks, package, scan
+from wrapitupiso.engine.font_scan import font_destinations
 
 
 class LowercaseDeliveryTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class LowercaseDeliveryTests(unittest.TestCase):
                         'Read {\n file Tile.<UDIM>.EXR\n name Tiles\n}\n'
                         'Text {\n font Title.TTF\n name Heading\n}\nOuter {\n name MyGizmo\n}\n')
             script.write_bytes(original.encode())
-            with patch('gizmo.default_paths', return_value=[source]):
+            with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[source]):
                 target = package(scan(script), root / 'Delivery')
             names = {p.relative_to(target).as_posix() for p in target.rglob('*')}
             self.assertEqual(target.name, target.name.lower())
@@ -70,7 +70,7 @@ class LowercaseDeliveryTests(unittest.TestCase):
             script = root / 'Title.NK'
             script.write_text('Text2 {\n name Default\n}\nText2 {\n name Custom\n'
                               ' font {{ My Family : Regular : MyFont.TTF : 0 }}\n}\n')
-            with patch('gizmo.default_paths', return_value=[]):
+            with patch('wrapitupiso.engine.gizmo.default_paths', return_value=[]):
                 target = package(scan(script), root / 'output')
             names = {p.name for p in (target / 'fonts').iterdir()}
             self.assertEqual(names, {'utopiaregular.pfa', 'utopiaregular.afm', 'myfont.ttf'})
