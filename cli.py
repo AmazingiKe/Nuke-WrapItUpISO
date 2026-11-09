@@ -1,3 +1,4 @@
+from i18n import status_code, status_message
 import argparse
 from pathlib import Path
 from core import package
@@ -20,7 +21,7 @@ def main():
                 for a in plan.assets: print(f'  {a.status}: {a.node}.{a.knob} {a.raw} {a.note}')
                 for w in plan.warnings: print('  Warning:',w)
                 for plugin in plan.plugins: print(f'  {plugin.status}: {plugin.name} {plugin.source} {plugin.note}')
-                if any(a.status!='就绪' for a in plan.assets) or plan.plugin_blockers: failures+=1
+                if any(status_code(a.status) != 'ready' for a in plan.assets) or plan.plugin_blockers: failures+=1
                 if not args.scan: print('Saved:',package(plan,args.output))
             except Exception as e: failures+=1; print('Error:',path,e)
     return 1 if failures else 0

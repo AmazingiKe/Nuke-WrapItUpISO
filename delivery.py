@@ -1,4 +1,5 @@
 """Render the absolute and portable project variants from the same copy plan."""
+from i18n import status_code, status_message
 
 # FreeType scans this knob's literal value while loading Text2, before evaluating
 # File_Knob expressions. Resolve just our generated fonts path before those nodes.
@@ -71,7 +72,7 @@ def absolute_plugin_names(plugins):
     used = {(p.packed_name or p.name).casefold() for p in plugins}
     aliases = {}
     for plugin in plugins:
-        if plugin.status != '就绪':
+        if status_code(plugin.status) != 'ready':
             continue
         base = (plugin.packed_name or plugin.name).lower() + '_relinked'
         name, number = base, 2

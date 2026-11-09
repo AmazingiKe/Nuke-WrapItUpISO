@@ -1,0 +1,1597 @@
+{
+  "error.validation": {
+    "zh-CN": "插件或文件校验未通过，请查看右侧状态",
+    "en": "Plugin or file validation failed. See Properties.",
+    "ja": "プラグインまたはファイルの検証に失敗しました。プロパティを確認してください。"
+  },
+  "error.output_exists": {
+    "zh-CN": "输出已存在，请更换输出目录",
+    "en": "Output already exists. Choose another folder.",
+    "ja": "出力先が既に存在します。別のフォルダーを選択してください。"
+  },
+  "error.file_missing": {
+    "zh-CN": "找不到文件，请检查路径",
+    "en": "File not found. Check the path.",
+    "ja": "ファイルが見つかりません。パスを確認してください。"
+  },
+  "error.access": {
+    "zh-CN": "无法访问文件，请检查权限或文件占用",
+    "en": "Cannot access the file. Check permissions or whether it is in use.",
+    "ja": "ファイルにアクセスできません。アクセス権や使用状況を確認してください。"
+  },
+  "error.parse": {
+    "zh-CN": "工程内容无法解析，请查看右侧状态",
+    "en": "Cannot parse the project. See Properties.",
+    "ja": "プロジェクトを解析できません。プロパティを確認してください。"
+  },
+  "error.cleanup_marker": {
+    "zh-CN": "未完成目录清理失败",
+    "en": "Incomplete folder cleanup failed",
+    "ja": "未完了フォルダーの削除に失敗"
+  },
+  "error.cleanup": {
+    "zh-CN": "未完成目录清理失败，请查看右侧状态并手动检查",
+    "en": "Could not clean up incomplete output. See Properties and check manually.",
+    "ja": "未完了の出力を削除できませんでした。プロパティを確認し、手動で対処してください。"
+  },
+  "error.io": {
+    "zh-CN": "文件读写失败，请检查磁盘和路径",
+    "en": "File read/write failed. Check the disk and path.",
+    "ja": "ファイルの読み書きに失敗しました。ディスクとパスを確認してください。"
+  },
+  "error.failed": {
+    "zh-CN": "处理失败，请查看右侧状态",
+    "en": "Processing failed. See Properties.",
+    "ja": "処理に失敗しました。プロパティを確認してください。"
+  },
+  "status.ready": {
+    "zh-CN": "就绪",
+    "en": "Ready",
+    "ja": "準備完了"
+  },
+  "summary.assets": {
+    "zh-CN": "{count} 项素材",
+    "en": "Assets: {count}",
+    "ja": "素材: {count} 件"
+  },
+  "status.external": {
+    "zh-CN": "外部依赖",
+    "en": "External dependency",
+    "ja": "外部依存"
+  },
+  "summary.gizmos": {
+    "zh-CN": "Gizmo {ready}/{total} 项就绪",
+    "en": "Gizmos ready: {ready}/{total}",
+    "ja": "Gizmo 準備完了: {ready}/{total} 件"
+  },
+  "summary.external": {
+    "zh-CN": "外部插件 {count} 项（不打包）",
+    "en": "External plugins: {count} (not packaged)",
+    "ja": "外部プラグイン: {count} 件（同梱対象外）"
+  },
+  "status.not_found": {
+    "zh-CN": "未找到",
+    "en": "Not found",
+    "ja": "未検出"
+  },
+  "summary.skipped": {
+    "zh-CN": "跳过缺失插件 {count} 项",
+    "en": "Missing plugins skipped: {count}",
+    "ja": "未検出のプラグインをスキップ: {count} 件"
+  },
+  "status.missing": {
+    "zh-CN": "缺失",
+    "en": "Missing",
+    "ja": "欠落"
+  },
+  "status.missing_frames": {
+    "zh-CN": "缺帧",
+    "en": "Missing frames",
+    "ja": "欠落フレーム"
+  },
+  "status.pending": {
+    "zh-CN": "待处理",
+    "en": "Needs attention",
+    "ja": "要対応"
+  },
+  "summary.status_count": {
+    "zh-CN": "{status} {count} 项",
+    "en": "{status}: {count}",
+    "ja": "{status}: {count} 件"
+  },
+  "summary.dependency_notes": {
+    "zh-CN": "有依赖提示",
+    "en": "Dependency notes available",
+    "ja": "依存関係の注意事項あり"
+  },
+  "progress.speed_pending": {
+    "zh-CN": "正在计算速度",
+    "en": "Calculating speed",
+    "ja": "速度を計算中"
+  },
+  "time.seconds": {
+    "zh-CN": "{seconds} 秒",
+    "en": "{seconds} s",
+    "ja": "{seconds} 秒"
+  },
+  "time.minutes_seconds": {
+    "zh-CN": "{minutes} 分 {seconds} 秒",
+    "en": "{minutes} min {seconds} s",
+    "ja": "{minutes} 分 {seconds} 秒"
+  },
+  "progress.transfer_speed": {
+    "zh-CN": "{speed:.1f} MiB/s · 复制剩余约 {remaining}",
+    "en": "{speed:.1f} MiB/s · About {remaining} remaining",
+    "ja": "{speed:.1f} MiB/s · 残り約 {remaining}"
+  },
+  "phase.copy": {
+    "zh-CN": "复制文件",
+    "en": "Copying files",
+    "ja": "ファイルをコピー中"
+  },
+  "phase.prepare_verify": {
+    "zh-CN": "准备校验",
+    "en": "Preparing verification",
+    "ja": "検証を準備中"
+  },
+  "phase.write_projects": {
+    "zh-CN": "写入工程与插件",
+    "en": "Writing projects and plugins",
+    "ja": "プロジェクトとプラグインを書き込み中"
+  },
+  "status.scanning": {
+    "zh-CN": "扫描中",
+    "en": "Scanning",
+    "ja": "スキャン中"
+  },
+  "phase.read": {
+    "zh-CN": "读取工程",
+    "en": "Reading project",
+    "ja": "プロジェクトを読み込み中"
+  },
+  "phase.scan": {
+    "zh-CN": "扫描素材与插件",
+    "en": "Scanning assets and plugins",
+    "ja": "素材とプラグインをスキャン中"
+  },
+  "phase.measure": {
+    "zh-CN": "统计素材",
+    "en": "Measuring assets",
+    "ja": "素材サイズを集計中"
+  },
+  "status.packaging": {
+    "zh-CN": "打包中",
+    "en": "Packaging",
+    "ja": "パッケージ化中"
+  },
+  "phase.prepare_pack": {
+    "zh-CN": "准备打包",
+    "en": "Preparing package",
+    "ja": "パッケージを準備中"
+  },
+  "phase.verify": {
+    "zh-CN": "校验文件",
+    "en": "Verifying files",
+    "ja": "ファイルを検証中"
+  },
+  "status.packaged_review": {
+    "zh-CN": "已打包·需核对",
+    "en": "Packaged · Review",
+    "ja": "完了・要確認"
+  },
+  "status.packaged": {
+    "zh-CN": "已打包",
+    "en": "Packaged",
+    "ja": "パッケージ化済み"
+  },
+  "log.packaged": {
+    "zh-CN": "打包完成",
+    "en": "Packaging complete",
+    "ja": "パッケージ化完了"
+  },
+  "log.scanned": {
+    "zh-CN": "扫描完成",
+    "en": "Scan complete",
+    "ja": "スキャン完了"
+  },
+  "status.cancelled": {
+    "zh-CN": "已取消",
+    "en": "Cancelled",
+    "ja": "キャンセル済み"
+  },
+  "log.incomplete_cleaned": {
+    "zh-CN": "，未完成文件已清理",
+    "en": "; incomplete files removed",
+    "ja": "、未完了のファイルを削除しました"
+  },
+  "log.cancelled": {
+    "zh-CN": "已取消 · {name}{detail}",
+    "en": "Cancelled · {name}{detail}",
+    "ja": "キャンセル済み · {name}{detail}"
+  },
+  "status.blocked": {
+    "zh-CN": "依赖待处理",
+    "en": "Dependencies unresolved",
+    "ja": "依存関係未解決"
+  },
+  "status.failed": {
+    "zh-CN": "失败",
+    "en": "Failed",
+    "ja": "失敗"
+  },
+  "log.failed": {
+    "zh-CN": "失败 · {name} · {reason}",
+    "en": "Failed · {name} · {reason}",
+    "ja": "失敗 · {name} · {reason}"
+  },
+  "label.output": {
+    "zh-CN": "输出目录",
+    "en": "Output Folder",
+    "ja": "出力フォルダー"
+  },
+  "hint.output": {
+    "zh-CN": "选择交付位置，或将文件夹拖到这里",
+    "en": "Choose an output location or drop a folder here",
+    "ja": "出力先を選択するか、ここにフォルダーをドロップ"
+  },
+  "action.choose_output": {
+    "zh-CN": "选择输出目录",
+    "en": "Choose Output Folder",
+    "ja": "出力フォルダーを選択"
+  },
+  "action.scan": {
+    "zh-CN": "扫描依赖",
+    "en": "Scan Dependencies",
+    "ja": "依存関係をスキャン"
+  },
+  "hint.scan": {
+    "zh-CN": "扫描素材与插件 · Ctrl+R",
+    "en": "Scan assets and plugins · Ctrl+R",
+    "ja": "素材とプラグインをスキャン · Ctrl+R"
+  },
+  "action.package": {
+    "zh-CN": "开始打包",
+    "en": "Start Packaging",
+    "ja": "パッケージ化を開始"
+  },
+  "hint.package": {
+    "zh-CN": "打包列表中的全部工程 · Ctrl+Return",
+    "en": "Package all listed projects · Ctrl+Return",
+    "ja": "一覧の全プロジェクトをパッケージ化 · Ctrl+Return"
+  },
+  "action.cancel": {
+    "zh-CN": "取消当前任务",
+    "en": "Cancel Current Task",
+    "ja": "現在の処理をキャンセル"
+  },
+  "panel.projects": {
+    "zh-CN": "工程",
+    "en": "Projects",
+    "ja": "プロジェクト"
+  },
+  "count.zero": {
+    "zh-CN": "0 个",
+    "en": "0",
+    "ja": "0 件"
+  },
+  "action.add": {
+    "zh-CN": "添加工程 / 文件夹",
+    "en": "Add Projects / Folders",
+    "ja": "プロジェクト / フォルダーを追加"
+  },
+  "action.clear": {
+    "zh-CN": "清空工程列表",
+    "en": "Clear Project List",
+    "ja": "プロジェクト一覧をクリア"
+  },
+  "empty.projects": {
+    "zh-CN": "拖入 .nk 工程或文件夹",
+    "en": "Drop .nk projects or folders here",
+    "ja": ".nk ファイルまたはフォルダーをドロップ"
+  },
+  "empty.add_hint": {
+    "zh-CN": "也可以点击 + 批量添加",
+    "en": "Or click + to add multiple projects",
+    "ja": "+ ボタンで複数のプロジェクトを追加できます"
+  },
+  "access.projects": {
+    "zh-CN": "工程列表",
+    "en": "Project list",
+    "ja": "プロジェクト一覧"
+  },
+  "column.project": {
+    "zh-CN": "工程名称",
+    "en": "Project Name",
+    "ja": "プロジェクト名"
+  },
+  "column.status": {
+    "zh-CN": "状态",
+    "en": "Status",
+    "ja": "状態"
+  },
+  "kind.media": {
+    "zh-CN": "素材",
+    "en": "Assets",
+    "ja": "素材"
+  },
+  "panel.assets": {
+    "zh-CN": "素材与插件",
+    "en": "Assets & Plugins",
+    "ja": "素材とプラグイン"
+  },
+  "label.not_scanned": {
+    "zh-CN": "尚未扫描",
+    "en": "Not scanned yet",
+    "ja": "未スキャン"
+  },
+  "filter.issues": {
+    "zh-CN": "只看 ×",
+    "en": "Issues only",
+    "ja": "問題のみ"
+  },
+  "hint.issues": {
+    "zh-CN": "仅显示缺失或需核对的依赖",
+    "en": "Show only missing dependencies or items requiring review",
+    "ja": "欠落または確認が必要な依存関係のみ表示"
+  },
+  "empty.dependencies": {
+    "zh-CN": "选择工程，扫描素材与插件",
+    "en": "Select a project and scan its dependencies",
+    "ja": "プロジェクトを選択して依存関係をスキャン"
+  },
+  "empty.dependencies_hint": {
+    "zh-CN": "检查素材、字体和 Gizmo 的收集状态",
+    "en": "Check collection status for assets, fonts and Gizmos",
+    "ja": "素材・フォント・Gizmo の収集状況を確認"
+  },
+  "access.dependencies": {
+    "zh-CN": "依赖列表",
+    "en": "Dependency list",
+    "ja": "依存関係一覧"
+  },
+  "column.node": {
+    "zh-CN": "节点",
+    "en": "Node",
+    "ja": "ノード"
+  },
+  "column.type": {
+    "zh-CN": "类型",
+    "en": "Type",
+    "ja": "種類"
+  },
+  "column.source": {
+    "zh-CN": "原路径 / 来源",
+    "en": "Original Path / Source",
+    "ja": "元のパス / 参照元"
+  },
+  "column.files": {
+    "zh-CN": "文件数",
+    "en": "Files",
+    "ja": "ファイル数"
+  },
+  "panel.log": {
+    "zh-CN": "日志",
+    "en": "Log",
+    "ja": "ログ"
+  },
+  "panel.properties": {
+    "zh-CN": "属性",
+    "en": "Properties",
+    "ja": "プロパティ"
+  },
+  "action.open_output": {
+    "zh-CN": "打开输出",
+    "en": "Open Output",
+    "ja": "出力先を開く"
+  },
+  "progress.idle": {
+    "zh-CN": "整体进度：尚未开始",
+    "en": "Overall progress: not started",
+    "ja": "全体の進捗: 未開始"
+  },
+  "progress.legend": {
+    "zh-CN": "深色：已处理工程   ·   浅色：当前任务",
+    "en": "Dark: processed projects   ·   Light: current task",
+    "ja": "濃色: 処理済みプロジェクト   ·   淡色: 現在の処理"
+  },
+  "menu.file": {
+    "zh-CN": "文件(&F)",
+    "en": "&File",
+    "ja": "ファイル(&F)"
+  },
+  "menu.add": {
+    "zh-CN": "添加工程 / 文件夹…",
+    "en": "Add Projects / Folders…",
+    "ja": "プロジェクト / フォルダーを追加…"
+  },
+  "menu.output": {
+    "zh-CN": "选择输出目录…",
+    "en": "Choose Output Folder…",
+    "ja": "出力フォルダーを選択…"
+  },
+  "action.quit": {
+    "zh-CN": "退出",
+    "en": "Exit",
+    "ja": "終了"
+  },
+  "menu.view": {
+    "zh-CN": "视图(&V)",
+    "en": "&View",
+    "ja": "表示(&V)"
+  },
+  "action.reset_layout": {
+    "zh-CN": "重置面板布局",
+    "en": "Reset Panel Layout",
+    "ja": "パネル配置をリセット"
+  },
+  "menu.help": {
+    "zh-CN": "帮助(&H)",
+    "en": "&Help",
+    "ja": "ヘルプ(&H)"
+  },
+  "action.about": {
+    "zh-CN": "关于",
+    "en": "About",
+    "ja": "このアプリについて"
+  },
+  "about.description": {
+    "zh-CN": "{label}\n\nNuke 工程批量交付工具\nQt6 / PySide6\n\n{tagline}",
+    "en": "{label}\n\nBatch delivery tool for Nuke projects\nQt6 / PySide6\n\n{tagline}",
+    "ja": "{label}\n\nNuke プロジェクトの一括納品ツール\nQt6 / PySide6\n\n{tagline}"
+  },
+  "progress.discovery": {
+    "zh-CN": "正在查找工程…",
+    "en": "Finding projects…",
+    "ja": "プロジェクトを検索中…"
+  },
+  "status.unscanned": {
+    "zh-CN": "未扫描",
+    "en": "Not scanned",
+    "ja": "未スキャン"
+  },
+  "count.projects": {
+    "zh-CN": "{count} 个",
+    "en": "{count}",
+    "ja": "{count} 件"
+  },
+  "progress.discovered": {
+    "zh-CN": "正在查找工程 · 新增 {count} 个",
+    "en": "Finding projects · Added {count}",
+    "ja": "プロジェクトを検索中 · {count} 件追加"
+  },
+  "progress.discovery_done": {
+    "zh-CN": "{outcome} · 新增 {count} 个工程",
+    "en": "{outcome} · Projects added: {count}",
+    "ja": "{outcome} · {count} 件のプロジェクトを追加"
+  },
+  "discovery.cancelled": {
+    "zh-CN": "已取消查找",
+    "en": "Search cancelled",
+    "ja": "検索をキャンセルしました"
+  },
+  "discovery.finished": {
+    "zh-CN": "添加完成",
+    "en": "Projects added",
+    "ja": "追加完了"
+  },
+  "error.picker": {
+    "zh-CN": "无法打开文件选择器",
+    "en": "Cannot Open File Picker",
+    "ja": "ファイル選択画面を開けません"
+  },
+  "action.remove_selected": {
+    "zh-CN": "移除选中工程  Delete",
+    "en": "Remove Selected Projects  Delete",
+    "ja": "選択したプロジェクトを一覧から削除  Delete"
+  },
+  "action.clear_all": {
+    "zh-CN": "清空全部工程",
+    "en": "Clear All Projects",
+    "ja": "全プロジェクトを一覧から削除"
+  },
+  "action.copy_path": {
+    "zh-CN": "复制素材 / 插件路径  Ctrl+C",
+    "en": "Copy Asset / Plugin Path  Ctrl+C",
+    "ja": "素材 / プラグインのパスをコピー  Ctrl+C"
+  },
+  "error.open_result": {
+    "zh-CN": "打开失败 · 无法打开所选交付结果，请检查路径与关联程序。",
+    "en": "Could not open the delivery result. Check the path and file association.",
+    "ja": "納品結果を開けません。パスと関連付けられたアプリを確認してください。"
+  },
+  "prompt.output": {
+    "zh-CN": "请先选择输出目录。",
+    "en": "Choose an output folder first.",
+    "ja": "先に出力フォルダーを選択してください。"
+  },
+  "title.add": {
+    "zh-CN": "添加工程",
+    "en": "Add Projects",
+    "ja": "プロジェクトを追加"
+  },
+  "prompt.add": {
+    "zh-CN": "请先添加 .nk 工程。",
+    "en": "Add a .nk project first.",
+    "ja": "先に .nk プロジェクトを追加してください。"
+  },
+  "log.started": {
+    "zh-CN": "开始{action} · 共 {count} 个工程",
+    "en": "{action} started · Projects: {count}",
+    "ja": "{action}を開始 · プロジェクト: {count} 件"
+  },
+  "task.package": {
+    "zh-CN": "打包",
+    "en": "Packaging",
+    "ja": "パッケージ化"
+  },
+  "task.scan": {
+    "zh-CN": "扫描",
+    "en": "Scanning",
+    "ja": "スキャン"
+  },
+  "status.waiting": {
+    "zh-CN": "等待扫描",
+    "en": "Waiting",
+    "ja": "スキャン待機中"
+  },
+  "progress.start": {
+    "zh-CN": "整体进度：0/{total} 个工程",
+    "en": "Overall progress: 0/{total} projects",
+    "ja": "全体の進捗: 0/{total} 件"
+  },
+  "progress.scanning": {
+    "zh-CN": "正在扫描…",
+    "en": "Scanning…",
+    "ja": "スキャン中…"
+  },
+  "error.ui_update": {
+    "zh-CN": "界面更新失败：{error}",
+    "en": "UI update failed: {error}",
+    "ja": "画面の更新に失敗しました: {error}"
+  },
+  "status.review": {
+    "zh-CN": "需核对",
+    "en": "Review needed",
+    "ja": "要確認"
+  },
+  "status.scanned": {
+    "zh-CN": "已扫描",
+    "en": "Scanned",
+    "ja": "スキャン済み"
+  },
+  "status.review_fragment": {
+    "zh-CN": "核对",
+    "en": "Review",
+    "ja": "確認"
+  },
+  "status.cancel_fragment": {
+    "zh-CN": "取消",
+    "en": "Cancel",
+    "ja": "キャンセル"
+  },
+  "kind.plugin": {
+    "zh-CN": "插件",
+    "en": "Plugin",
+    "ja": "プラグイン"
+  },
+  "kind.font": {
+    "zh-CN": "字体",
+    "en": "Font",
+    "ja": "フォント"
+  },
+  "summary.dependencies": {
+    "zh-CN": "{assets} 项素材 / 字体   ·   {plugins} 项插件",
+    "en": "Assets / fonts: {assets}   ·   Plugins: {plugins}",
+    "ja": "素材 / フォント: {assets} 件   ·   プラグイン: {plugins} 件"
+  },
+  "hint.select_project": {
+    "zh-CN": "请选择左侧工程。",
+    "en": "Select a project on the left.",
+    "ja": "左側のプロジェクトを選択してください。"
+  },
+  "hint.select_asset": {
+    "zh-CN": "点击素材，可查看详细状态。",
+    "en": "Click an asset to view its details.",
+    "ja": "素材をクリックすると詳細を確認できます。"
+  },
+  "detail.plugin_status": {
+    "zh-CN": "插件状态：{status} · {name}",
+    "en": "Plugin status: {status} · {name}",
+    "ja": "プラグインの状態: {status} · {name}"
+  },
+  "detail.source": {
+    "zh-CN": "来源：{source}",
+    "en": "Source: {source}",
+    "ja": "参照元: {source}"
+  },
+  "detail.undetermined": {
+    "zh-CN": "尚未确定",
+    "en": "Not determined",
+    "ja": "未確定"
+  },
+  "detail.external_plugin": {
+    "zh-CN": "此插件不参与收集，不阻止工程打包。",
+    "en": "This plugin is not collected and does not block packaging.",
+    "ja": "このプラグインは収集対象外で、パッケージ化を妨げません。"
+  },
+  "detail.skipped_plugin": {
+    "zh-CN": "此插件将跳过收集，其余内容继续打包。",
+    "en": "This plugin will be skipped; other items will still be packaged.",
+    "ja": "このプラグインをスキップし、他の項目のパッケージ化を続行します。"
+  },
+  "status.conflict": {
+    "zh-CN": "同名冲突",
+    "en": "Name conflict",
+    "ja": "同名の競合"
+  },
+  "detail.blocked": {
+    "zh-CN": "此依赖未解决，工程不能打包。",
+    "en": "This dependency is unresolved. The project cannot be packaged.",
+    "ja": "この依存関係が未解決のため、プロジェクトをパッケージ化できません。"
+  },
+  "detail.resolve": {
+    "zh-CN": "请按上方原因处理内部素材、脚本或插件依赖，然后重新扫描。",
+    "en": "Resolve the asset, script or plugin issues above, then scan again.",
+    "ja": "上記の素材・スクリプト・プラグインの問題を解決し、再スキャンしてください。"
+  },
+  "detail.candidate": {
+    "zh-CN": "候选：{path}",
+    "en": "Candidate: {path}",
+    "ja": "候補: {path}"
+  },
+  "detail.used_by": {
+    "zh-CN": "引用位置：{owner}",
+    "en": "Referenced by: {owner}",
+    "ja": "参照箇所: {owner}"
+  },
+  "detail.media_ready": {
+    "zh-CN": "素材文件已找到。",
+    "en": "Asset files found.",
+    "ja": "素材ファイルが見つかりました。"
+  },
+  "detail.media_missing": {
+    "zh-CN": "未找到匹配的素材文件。",
+    "en": "No matching asset files found.",
+    "ja": "一致する素材ファイルが見つかりません。"
+  },
+  "detail.frames_missing": {
+    "zh-CN": "序列存在缺帧，请核对声明的帧范围。",
+    "en": "Frames are missing. Check the declared frame range.",
+    "ja": "欠落フレームがあります。指定されたフレーム範囲を確認してください。"
+  },
+  "detail.media_pending": {
+    "zh-CN": "需人工核对路径或表达式。",
+    "en": "Check the path or expression manually.",
+    "ja": "パスまたは式を手動で確認してください。"
+  },
+  "detail.asset_status": {
+    "zh-CN": "素材状态：{status} · 文件数：{count}",
+    "en": "Asset status: {status} · Files: {count}",
+    "ja": "素材の状態: {status} · ファイル数: {count}"
+  },
+  "detail.note": {
+    "zh-CN": "说明：{note}",
+    "en": "Details: {note}",
+    "ja": "説明: {note}"
+  },
+  "detail.check_asset": {
+    "zh-CN": "请核对素材状态。",
+    "en": "Check the asset status.",
+    "ja": "素材の状態を確認してください。"
+  },
+  "detail.missing_frames": {
+    "zh-CN": "缺帧（共 {count} 帧）：{frames}",
+    "en": "Missing frames ({count} total): {frames}",
+    "ja": "欠落フレーム（計 {count} フレーム）: {frames}"
+  },
+  "detail.first_fifty": {
+    "zh-CN": "…（仅显示前 50 帧）",
+    "en": "… (first 50 frames shown)",
+    "ja": "…（先頭の 50 フレームのみ表示）"
+  },
+  "detail.project_failed": {
+    "zh-CN": "工程处理失败：{error}",
+    "en": "Project processing failed: {error}",
+    "ja": "プロジェクトの処理に失敗しました: {error}"
+  },
+  "detail.node": {
+    "zh-CN": "节点：{node} · 参数：{knob}",
+    "en": "Node: {node} · Knob: {knob}",
+    "ja": "ノード: {node} · パラメーター: {knob}"
+  },
+  "detail.original": {
+    "zh-CN": "原路径：{path}",
+    "en": "Original path: {path}",
+    "ja": "元のパス: {path}"
+  },
+  "detail.resolved": {
+    "zh-CN": "解析路径：{path}",
+    "en": "Resolved path: {path}",
+    "ja": "解決済みパス: {path}"
+  },
+  "detail.unresolved": {
+    "zh-CN": "尚未解析",
+    "en": "Not resolved",
+    "ja": "未解決"
+  },
+  "detail.project_status": {
+    "zh-CN": "工程状态：{status}",
+    "en": "Project status: {status}",
+    "ja": "プロジェクトの状態: {status}"
+  },
+  "hint.scan_dependencies": {
+    "zh-CN": "点击“扫描素材与插件”查看依赖。",
+    "en": "Click Scan Dependencies to inspect assets and plugins.",
+    "ja": "「依存関係をスキャン」で素材とプラグインを確認できます。"
+  },
+  "detail.project": {
+    "zh-CN": "工程：{path}",
+    "en": "Project: {path}",
+    "ja": "プロジェクト: {path}"
+  },
+  "detail.assets_summary": {
+    "zh-CN": "{count} 项素材 · 需核对 {issues} 项 · {size:.1f} MiB",
+    "en": "Assets: {count} · Review: {issues} · {size:.1f} MiB",
+    "ja": "素材: {count} 件 · 要確認: {issues} 件 · {size:.1f} MiB"
+  },
+  "detail.plugins_summary": {
+    "zh-CN": "插件与外部依赖：{count} 项 · 待处理 {pending} 项",
+    "en": "Plugins and external dependencies: {count} · Unresolved: {pending}",
+    "ja": "プラグインと外部依存: {count} 件 · 未解決: {pending} 件"
+  },
+  "detail.nonblocking": {
+    "zh-CN": "不阻止打包",
+    "en": "Packaging allowed",
+    "ja": "パッケージ化可能"
+  },
+  "detail.strict_blocking": {
+    "zh-CN": "严格检查阻止打包",
+    "en": "Blocked by strict checks",
+    "ja": "厳密な検査によりパッケージ化不可"
+  },
+  "detail.scripts_summary": {
+    "zh-CN": "脚本待核对：{count} 项 · {policy}",
+    "en": "Scripts requiring review: {count} · {policy}",
+    "ja": "要確認のスクリプト: {count} 件 · {policy}"
+  },
+  "detail.search_paths": {
+    "zh-CN": "已自动搜索 {count} 个插件目录",
+    "en": "Automatically searched {count} plugin folders",
+    "ja": "{count} 個のプラグインフォルダーを自動検索しました"
+  },
+  "progress.project": {
+    "zh-CN": "已处理 {done}/{total} 个工程 · 当前 {index}/{count} · {name}",
+    "en": "Processed {done}/{total} projects · Current {index}/{count} · {name}",
+    "ja": "処理済み {done}/{total} 件 · 現在 {index}/{count} 件目 · {name}"
+  },
+  "progress.tasks": {
+    "zh-CN": "{percent:.1f}% · 任务 {done}/{total}",
+    "en": "{percent:.1f}% · Tasks {done}/{total}",
+    "ja": "{percent:.1f}% · タスク {done}/{total}"
+  },
+  "progress.unknown": {
+    "zh-CN": "正在统计或处理任务",
+    "en": "Counting or processing tasks",
+    "ja": "タスクを集計または処理中"
+  },
+  "progress.cancel_discovery": {
+    "zh-CN": "正在取消查找…",
+    "en": "Cancelling search…",
+    "ja": "検索をキャンセル中…"
+  },
+  "progress.cancel_cleanup": {
+    "zh-CN": "正在取消并清理…",
+    "en": "Cancelling and cleaning up…",
+    "ja": "キャンセルして未完了の出力を削除中…"
+  },
+  "outcome.failed": {
+    "zh-CN": "结束，存在失败",
+    "en": "Finished with errors",
+    "ja": "エラーありで終了"
+  },
+  "outcome.complete": {
+    "zh-CN": "任务完成",
+    "en": "Task complete",
+    "ja": "処理完了"
+  },
+  "progress.result": {
+    "zh-CN": "{outcome} · 成功 {completed} · 失败 {failed} · 共 {total} 个工程",
+    "en": "{outcome} · Succeeded {completed} · Failed {failed} · Total {total}",
+    "ja": "{outcome} · 成功 {completed} 件 · 失敗 {failed} 件 · 合計 {total} 件"
+  },
+  "log.result": {
+    "zh-CN": "{outcome} · 完成 {count} 个工程",
+    "en": "{outcome} · Projects completed: {count}",
+    "ja": "{outcome} · 完了したプロジェクト: {count} 件"
+  },
+  "outcome.batch_complete": {
+    "zh-CN": "本轮结束",
+    "en": "Batch finished",
+    "ja": "一括処理終了"
+  },
+  "log.failed_count": {
+    "zh-CN": "，失败 {count} 个",
+    "en": "; failed: {count}",
+    "ja": "、失敗: {count} 件"
+  },
+  "log.incomplete_count": {
+    "zh-CN": "，未完成 {count} 个",
+    "en": "; incomplete: {count}",
+    "ja": "、未完了: {count} 件"
+  },
+  "log.review_count": {
+    "zh-CN": "，{count} 个需核对",
+    "en": "; review needed: {count}",
+    "ja": "、要確認: {count} 件"
+  },
+  "log.see_properties": {
+    "zh-CN": "（见右侧属性）",
+    "en": " (see Properties)",
+    "ja": "（プロパティを参照）"
+  },
+  "log.closing": {
+    "zh-CN": "正在取消，清理完成后自动关闭。",
+    "en": "Cancelling. The window will close after cleanup.",
+    "ja": "キャンセル中です。未完了の出力を削除した後に終了します。"
+  },
+  "parse.unclosed": {
+    "zh-CN": "工程包含未闭合的括号或引号",
+    "en": "Project contains an unclosed bracket or quote",
+    "ja": "プロジェクト内の括弧または引用符が閉じていません"
+  },
+  "parse.encoding": {
+    "zh-CN": "无法解码工程，请转换为 UTF-8 后重试",
+    "en": "Cannot decode the project. Convert it to UTF-8 and retry.",
+    "ja": "プロジェクトをデコードできません。UTF-8 に変換して再試行してください。"
+  },
+  "parse.dynamic": {
+    "zh-CN": "动态表达式：未执行，请手动处理",
+    "en": "Dynamic expression was not executed; manual review required",
+    "ja": "動的な式は実行していません。手動で確認してください"
+  },
+  "parse.undefined_env": {
+    "zh-CN": "环境变量未定义",
+    "en": "Environment variable is undefined",
+    "ja": "環境変数が定義されていません"
+  },
+  "parse.special_path": {
+    "zh-CN": "特殊路径语法，需手动处理",
+    "en": "Special path syntax requires manual review",
+    "ja": "特殊なパス構文のため手動で確認してください"
+  },
+  "parse.project_directory": {
+    "zh-CN": "project_directory 无法解析，相对素材路径需手动处理",
+    "en": "Cannot resolve project_directory; check relative asset paths manually",
+    "ja": "project_directory を解決できません。素材の相対パスを手動で確認してください"
+  },
+  "phase.parsed": {
+    "zh-CN": "解析工程完成",
+    "en": "Project parsing complete",
+    "ja": "プロジェクトの解析完了"
+  },
+  "parse.multiple_sequences": {
+    "zh-CN": "多个序列占位符，需手动处理",
+    "en": "Multiple sequence placeholders require manual review",
+    "ja": "シーケンスのプレースホルダーが複数あります。手動で確認してください"
+  },
+  "asset.all_frames": {
+    "zh-CN": "收集目录中所有匹配帧",
+    "en": "Collecting all matching frames in the folder",
+    "ja": "フォルダー内の一致する全フレームを収集"
+  },
+  "asset.missing_range": {
+    "zh-CN": "；声明范围缺 {count} 帧",
+    "en": "; {count} frames missing from the declared range",
+    "ja": "、指定範囲内で {count} フレームが欠落"
+  },
+  "package.unresolved": {
+    "zh-CN": "插件依赖未解决，未生成交付包：\n",
+    "en": "Plugin dependencies unresolved; no delivery package was generated:\n",
+    "ja": "プラグインの依存関係が未解決のため、納品パッケージは生成されませんでした:\n"
+  },
+  "package.output_exists": {
+    "zh-CN": "输出已存在，请选择新目录或移走：{path}",
+    "en": "Output already exists. Choose another folder or move it: {path}",
+    "ja": "出力先が既に存在します。別のフォルダーを選択するか移動してください: {path}"
+  },
+  "package.incomplete": {
+    "zh-CN": "打包尚未完成，请勿交付此目录。\n",
+    "en": "Packaging is incomplete. Do not deliver this folder.\n",
+    "ja": "パッケージ化は未完了です。このフォルダーを納品しないでください。\n"
+  },
+  "phase.prepare_copy": {
+    "zh-CN": "准备复制",
+    "en": "Preparing to copy",
+    "ja": "コピーを準備中"
+  },
+  "package.source_changed": {
+    "zh-CN": "复制过程中素材发生变化，请重新扫描：{path}",
+    "en": "Asset changed during copying. Scan again: {path}",
+    "ja": "コピー中に素材が変更されました。再スキャンしてください: {path}"
+  },
+  "font.non_ascii_warning": {
+    "zh-CN": "Nuke 15.1v5 的 Text2 字体查找在含中文等非 ASCII 字符的路径下可能失败；请使用英文交付路径和字体文件名。",
+    "en": "Nuke 15.1v5 Text2 font lookup may fail with non-ASCII paths. Use ASCII delivery paths and font filenames.",
+    "ja": "Nuke 15.1v5 の Text2 は非 ASCII 文字を含むパスでフォント検索に失敗する場合があります。納品パスとフォントファイル名には ASCII 文字を使用してください。"
+  },
+  "font.resave_warning": {
+    "zh-CN": "在 Nuke 中另存工程后，Text2 字体目录会保存为当前绝对路径；再次移动交付前请重新打包或重新设置工程字体目录。",
+    "en": "Saving the project in Nuke stores the Text2 font folder as an absolute path. Before moving it again, repackage or reset the project font folder.",
+    "ja": "Nuke で保存すると Text2 のフォントフォルダーは絶対パスになります。再度移動する前に、再パッケージ化するかフォントフォルダーを再設定してください。"
+  },
+  "package.cleanup_failed": {
+    "zh-CN": "{kind}: {error}；未完成目录清理失败，请手动检查 {path}：{cleanup_error}",
+    "en": "{kind}: {error}; could not clean up incomplete output. Check {path} manually: {cleanup_error}",
+    "ja": "{kind}: {error}。未完了の出力を削除できません。{path} を手動で確認してください: {cleanup_error}"
+  },
+  "phase.find_plugins": {
+    "zh-CN": "查找插件：{name}",
+    "en": "Finding plugins: {name}",
+    "ja": "プラグインを検索中: {name}"
+  },
+  "plugin.folder_error": {
+    "zh-CN": "插件目录读取失败：{path}",
+    "en": "Cannot read plugin folder: {path}",
+    "ja": "プラグインフォルダーを読み込めません: {path}"
+  },
+  "gizmo.no_definition": {
+    "zh-CN": "没有 Gizmo/Group 定义",
+    "en": "No Gizmo/Group definition",
+    "ja": "Gizmo/Group 定義がありません"
+  },
+  "gizmo.extra_end": {
+    "zh-CN": "多余的 end_group",
+    "en": "Unexpected end_group",
+    "ja": "余分な end_group があります"
+  },
+  "gizmo.multiple_roots": {
+    "zh-CN": "包含多个顶层定义",
+    "en": "Multiple top-level definitions",
+    "ja": "最上位の定義が複数あります"
+  },
+  "gizmo.outside_definition": {
+    "zh-CN": "节点位于 Gizmo 定义之外",
+    "en": "Node is outside the Gizmo definition",
+    "ja": "ノードが Gizmo 定義の外にあります"
+  },
+  "gizmo.missing_end": {
+    "zh-CN": "缺少 end_group，Gizmo 定义未结束",
+    "en": "Missing end_group; Gizmo definition is incomplete",
+    "ja": "end_group がなく、Gizmo 定義が閉じていません"
+  },
+  "script.callback": {
+    "zh-CN": "{location}：含 {knob} 回调，需核对脚本依赖",
+    "en": "{location}: contains a {knob} callback; review script dependencies",
+    "ja": "{location}: {knob} コールバックを含みます。スクリプトの依存関係を確認してください"
+  },
+  "script.expression": {
+    "zh-CN": "{location} / {knob}：含脚本表达式，需核对运行时依赖",
+    "en": "{location} / {knob}: contains a script expression; review runtime dependencies",
+    "ja": "{location} / {knob}: スクリプト式を含みます。実行時の依存関係を確認してください"
+  },
+  "label.unnamed": {
+    "zh-CN": "未命名",
+    "en": "Unnamed",
+    "ja": "名前なし"
+  },
+  "script.button": {
+    "zh-CN": "{location} / {button}：含 Python/Tcl 按钮，需核对脚本依赖",
+    "en": "{location} / {button}: contains a Python/Tcl button; review script dependencies",
+    "ja": "{location} / {button}: Python/Tcl ボタンを含みます。スクリプトの依存関係を確認してください"
+  },
+  "validation.scope": {
+    "zh-CN": "已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。",
+    "en": "Explicit Gizmo dependencies checked. Binary plugin compatibility, implicit OCIO dependencies and rendering still require verification in Nuke.",
+    "ja": "明示的な Gizmo 依存関係を検査しました。バイナリプラグインの互換性、暗黙の OCIO 依存関係、レンダリング結果は Nuke で確認してください。"
+  },
+  "script.preserved_review": {
+    "zh-CN": "脚本待核对（已原样保留，不阻止打包）：{reason}",
+    "en": "Script review needed (preserved unchanged; packaging allowed): {reason}",
+    "ja": "スクリプト要確認（原文を保持し、パッケージ化は続行）: {reason}"
+  },
+  "status.needs_review": {
+    "zh-CN": "待核对",
+    "en": "Needs review",
+    "ja": "要確認"
+  },
+  "gizmo.cycle": {
+    "zh-CN": "循环 Gizmo 依赖：",
+    "en": "Circular Gizmo dependency: ",
+    "ja": "Gizmo の循環依存: "
+  },
+  "plugin.ofx_external": {
+    "zh-CN": "OFX 插件不参与打包；接收方需自行安装兼容版本并配置授权。",
+    "en": "OFX plugins are not packaged. Recipients must install compatible versions and configure licenses.",
+    "ja": "OFX プラグインは同梱されません。受取側で互換性のあるバージョンをインストールし、ライセンスを設定してください。"
+  },
+  "gizmo.case_conflict": {
+    "zh-CN": "节点名称仅大小写不同，无法安全写入同一插件目录",
+    "en": "Node names differ only by case and cannot safely share a plugin folder",
+    "ja": "ノード名が大文字と小文字のみ異なるため、同じプラグインフォルダーに安全に保存できません"
+  },
+  "gizmo.unsafe_name": {
+    "zh-CN": "节点名称无法安全映射为 Gizmo 文件名",
+    "en": "Node name cannot be safely mapped to a Gizmo filename",
+    "ja": "ノード名を安全な Gizmo ファイル名に変換できません"
+  },
+  "gizmo.dynamic_reference": {
+    "zh-CN": "Gizmo 引用不是可确定的绝对路径，保留原引用，需核对接收方路径。",
+    "en": "Gizmo reference is not a resolvable absolute path. Original reference retained; verify the recipient's path.",
+    "ja": "Gizmo 参照が解決可能な絶対パスではありません。元の参照を保持します。受取側のパスを確認してください。"
+  },
+  "gizmo.explicit_access": {
+    "zh-CN": "显式 Gizmo 路径无法访问：{error}",
+    "en": "Cannot access explicit Gizmo path: {error}",
+    "ja": "明示的な Gizmo パスにアクセスできません: {error}"
+  },
+  "gizmo.explicit_missing": {
+    "zh-CN": "工程指定的 Gizmo 文件未找到，保留原引用；不会以搜索目录中的同名文件替代。",
+    "en": "The project's Gizmo file was not found. Original reference retained; no same-named file from search paths will be substituted.",
+    "ja": "プロジェクトが指定する Gizmo が見つかりません。元の参照を保持し、検索先の同名ファイルでは置き換えません。"
+  },
+  "plugin.missing_skipped": {
+    "zh-CN": "未找到对应文件，跳过收集并继续打包；也可能是未收录的内置节点。",
+    "en": "No matching file found; skipped while packaging continues. This may also be an unlisted built-in node.",
+    "ja": "対応するファイルが見つからないため、収集をスキップして続行します。未登録の組み込みノードの可能性もあります。"
+  },
+  "plugin.missing": {
+    "zh-CN": "未找到对应文件；也可能是未收录的内置节点。",
+    "en": "No matching file found. This may also be an unlisted built-in node.",
+    "ja": "対応するファイルが見つかりません。未登録の組み込みノードの可能性もあります。"
+  },
+  "plugin.binary_external": {
+    "zh-CN": "二进制插件不参与打包；接收方需自行安装兼容版本、关联库并配置授权。",
+    "en": "Binary plugins are not packaged. Recipients must install compatible versions and related libraries, and configure licenses.",
+    "ja": "バイナリプラグインは同梱されません。受取側で互換性のあるバージョンと関連ライブラリをインストールし、ライセンスを設定してください。"
+  },
+  "plugin.binary_priority": {
+    "zh-CN": "最高优先级目录存在二进制候选及同名 Gizmo，保留外部依赖引用，请核对接收方版本。",
+    "en": "The highest-priority folder contains a binary candidate and a same-named Gizmo. External reference retained; verify the recipient's version.",
+    "ja": "最優先のフォルダーにバイナリ候補と同名 Gizmo があります。外部参照を保持します。受取側のバージョンを確認してください。"
+  },
+  "plugin.lower_binary": {
+    "zh-CN": "{name}：存在较低优先级的同名二进制插件，按搜索顺序收集 {path}，请核对接收方版本。",
+    "en": "{name}: a lower-priority binary plugin has the same name. Collecting {path} in search order; verify the recipient's version.",
+    "ja": "{name}: 優先度の低い場所に同名のバイナリプラグインがあります。検索順に従って {path} を収集します。受取側のバージョンを確認してください。"
+  },
+  "plugin.read_error": {
+    "zh-CN": "插件文件读取失败：{error}",
+    "en": "Cannot read plugin file: {error}",
+    "ja": "プラグインファイルを読み込めません: {error}"
+  },
+  "plugin.different_contents": {
+    "zh-CN": "同名文件内容不同",
+    "en": "Same-named files have different contents",
+    "ja": "同名のファイルの内容が異なります"
+  },
+  "plugin.auto_select": {
+    "zh-CN": "{name}：同名版本不同，按搜索顺序自动选择 {path}",
+    "en": "{name}: multiple versions found; automatically selected {path} in search order",
+    "ja": "{name}: 異なるバージョンがあります。検索順に従って {path} を自動選択しました"
+  },
+  "gizmo.depth": {
+    "zh-CN": "Gizmo 嵌套超过 100 层，请检查依赖",
+    "en": "Gizmo nesting exceeds 100 levels. Check dependencies.",
+    "ja": "Gizmo のネストが 100 階層を超えています。依存関係を確認してください。"
+  },
+  "plugin.ready_note": {
+    "zh-CN": "已找到，显式素材与插件依赖已扫描",
+    "en": "Found; explicit asset and plugin dependencies scanned",
+    "ja": "検出済み。明示的な素材とプラグインの依存関係をスキャンしました"
+  },
+  "gizmo.parse_error": {
+    "zh-CN": "Gizmo 解析失败：{error}",
+    "en": "Gizmo parsing failed: {error}",
+    "ja": "Gizmo の解析に失敗しました: {error}"
+  },
+  "scan.project_changed": {
+    "zh-CN": "扫描过程中工程发生变化，请重新扫描",
+    "en": "Project changed during scanning. Scan again.",
+    "ja": "スキャン中にプロジェクトが変更されました。再スキャンしてください。"
+  },
+  "scan.plugin_changed": {
+    "zh-CN": "扫描过程中插件内容变化",
+    "en": "Plugin contents changed during scanning",
+    "ja": "スキャン中にプラグインの内容が変更されました"
+  },
+  "gizmo.internal_media": {
+    "zh-CN": "；内部素材存在缺失、缺帧或动态路径",
+    "en": "; internal assets have missing files, missing frames or dynamic paths",
+    "ja": "、内部素材に欠落ファイル、欠落フレーム、または動的パスがあります"
+  },
+  "gizmo.custom_paths": {
+    "zh-CN": "Gizmo 自定义文件参数存在缺失或动态路径",
+    "en": "Gizmo custom file parameters contain missing or dynamic paths",
+    "ja": "Gizmo のカスタムファイルパラメーターに欠落または動的パスがあります"
+  },
+  "gizmo.internal_plugins": {
+    "zh-CN": "内部插件依赖未解决：",
+    "en": "Unresolved internal plugin dependencies: ",
+    "ja": "未解決の内部プラグイン依存関係: "
+  },
+  "verify.source_changed": {
+    "zh-CN": "扫描后文件发生变化，请重新扫描：{path}",
+    "en": "File changed since scanning. Scan again: {path}",
+    "ja": "スキャン後にファイルが変更されました。再スキャンしてください: {path}"
+  },
+  "status.not_collected": {
+    "zh-CN": "未收集",
+    "en": "Not collected",
+    "ja": "未収集"
+  },
+  "status.collected": {
+    "zh-CN": "已收集",
+    "en": "Collected",
+    "ja": "収集済み"
+  },
+  "phase.start_verify": {
+    "zh-CN": "开始校验",
+    "en": "Starting verification",
+    "ja": "検証を開始"
+  },
+  "verify.failed": {
+    "zh-CN": "打包文件校验失败：{path}",
+    "en": "Packaged file verification failed: {path}",
+    "ja": "パッケージ内のファイル検証に失敗しました: {path}"
+  },
+  "font.search_path_error": {
+    "zh-CN": "字体搜索路径：",
+    "en": "Font search path: ",
+    "ja": "フォント検索パス: "
+  },
+  "font.parse_error": {
+    "zh-CN": "字体格式无法静态解析，请核对",
+    "en": "Font format cannot be parsed statically; review required",
+    "ja": "フォント形式を静的に解析できません。確認が必要です"
+  },
+  "font.search_note": {
+    "zh-CN": "按工程、插件、NUKE_FONT_PATH、Nuke 和系统字体目录查找",
+    "en": "Searched project, plugin, NUKE_FONT_PATH, Nuke and system font folders",
+    "ja": "プロジェクト、プラグイン、NUKE_FONT_PATH、Nuke、システムのフォントフォルダーを検索しました"
+  },
+  "config.recursive_limit": {
+    "zh-CN": "递归目录项超过静态枚举限制",
+    "en": "Recursive directory entries exceed the static enumeration limit",
+    "ja": "再帰的なディレクトリ項目数が静的列挙の上限を超えています"
+  },
+  "config.unpack": {
+    "zh-CN": "解包赋值无法静态确定",
+    "en": "Cannot statically determine unpacking assignment",
+    "ja": "アンパック代入を静的に確定できません"
+  },
+  "config.assignment": {
+    "zh-CN": "不支持的赋值目标",
+    "en": "Unsupported assignment target",
+    "ja": "未対応の代入先です"
+  },
+  "config.function_signature": {
+    "zh-CN": "辅助函数参数或装饰器无法静态确定",
+    "en": "Cannot statically determine helper function parameters or decorators",
+    "ja": "補助関数の引数またはデコレーターを静的に確定できません"
+  },
+  "config.too_many_arguments": {
+    "zh-CN": "辅助函数参数过多",
+    "en": "Too many helper function arguments",
+    "ja": "補助関数の引数が多すぎます"
+  },
+  "config.arguments_mismatch": {
+    "zh-CN": "辅助函数参数无法匹配",
+    "en": "Cannot match helper function arguments",
+    "ja": "補助関数の引数が一致しません"
+  },
+  "config.missing_arguments": {
+    "zh-CN": "辅助函数缺少参数",
+    "en": "Missing helper function arguments",
+    "ja": "補助関数の引数が不足しています"
+  },
+  "config.path_review": {
+    "zh-CN": "插件路径需核对：{source}:{line} · {reason}",
+    "en": "Plugin path requires review: {source}:{line} · {reason}",
+    "ja": "プラグインパスの確認が必要です: {source}:{line} · {reason}"
+  },
+  "config.comparison": {
+    "zh-CN": "不支持的条件比较",
+    "en": "Unsupported conditional comparison",
+    "ja": "未対応の条件比較です"
+  },
+  "config.env_unset": {
+    "zh-CN": "环境变量未设置",
+    "en": "Environment variable is not set",
+    "ja": "環境変数が設定されていません"
+  },
+  "config.sort_arguments": {
+    "zh-CN": "不支持的排序参数",
+    "en": "Unsupported sorting arguments",
+    "ja": "未対応のソート引数です"
+  },
+  "config.sort_key": {
+    "zh-CN": "排序键不是可静态解析的单参数表达式",
+    "en": "Sort key is not a statically resolvable single-argument expression",
+    "ja": "ソートキーが静的に解析可能な単一引数の式ではありません"
+  },
+  "config.entries_limit": {
+    "zh-CN": "目录项超过静态枚举限制",
+    "en": "Directory entries exceed the static enumeration limit",
+    "ja": "ディレクトリ項目数が静的列挙の上限を超えています"
+  },
+  "config.call_arguments": {
+    "zh-CN": "不支持的调用参数",
+    "en": "Unsupported call arguments",
+    "ja": "未対応の呼び出し引数です"
+  },
+  "config.dynamic": {
+    "zh-CN": "动态表达式无法静态确定",
+    "en": "Dynamic expression cannot be determined statically",
+    "ja": "動的な式を静的に確定できません"
+  },
+  "config.control_flow": {
+    "zh-CN": "条件、循环或函数调用无法静态确定",
+    "en": "Cannot statically determine a condition, loop or function call",
+    "ja": "条件、ループ、関数呼び出しを静的に確定できません"
+  },
+  "config.depth": {
+    "zh-CN": "启动配置嵌套过深",
+    "en": "Startup configuration is nested too deeply",
+    "ja": "起動設定のネストが深すぎます"
+  },
+  "config.steps": {
+    "zh-CN": "启动配置超过静态解析步数限制",
+    "en": "Startup configuration exceeds the static parsing step limit",
+    "ja": "起動設定が静的解析のステップ上限を超えています"
+  },
+  "config.path_type": {
+    "zh-CN": "路径为空或不是字符串",
+    "en": "Path is empty or is not a string",
+    "ja": "パスが空、または文字列ではありません"
+  },
+  "config.path_env": {
+    "zh-CN": "路径中的环境变量未设置",
+    "en": "Environment variable in path is not set",
+    "ja": "パス内の環境変数が設定されていません"
+  },
+  "config.path_argument": {
+    "zh-CN": "缺少路径参数",
+    "en": "Missing path argument",
+    "ja": "パス引数が不足しています"
+  },
+  "config.branch_flow": {
+    "zh-CN": "条件分支的流程控制无法确定",
+    "en": "Cannot determine conditional branch control flow",
+    "ja": "条件分岐の制御フローを確定できません"
+  },
+  "config.loop_items": {
+    "zh-CN": "循环不是有限路径或常量列表",
+    "en": "Loop does not use a finite list of paths or constants",
+    "ja": "ループが有限のパスまたは定数リストを使用していません"
+  },
+  "config.unsupported_flow": {
+    "zh-CN": "启动配置包含无法静态执行的流程控制",
+    "en": "Startup configuration contains control flow that cannot be evaluated statically",
+    "ja": "起動設定に静的評価できない制御フローが含まれています"
+  },
+  "config.folder_limit": {
+    "zh-CN": "自动发现目录超过 512 个",
+    "en": "More than 512 automatically discovered folders",
+    "ja": "自動検出されたフォルダーが 512 個を超えています"
+  },
+  "config.folder_depth": {
+    "zh-CN": "插件启动目录嵌套过深：{path}",
+    "en": "Plugin startup folder nesting is too deep: {path}",
+    "ja": "プラグイン起動フォルダーのネストが深すぎます: {path}"
+  },
+  "phase.read_config": {
+    "zh-CN": "读取插件配置：{name}",
+    "en": "Reading plugin configuration: {name}",
+    "ja": "プラグイン設定を読み込み中: {name}"
+  },
+  "config.size_limit": {
+    "zh-CN": "配置文件超过 1 MiB",
+    "en": "Configuration file exceeds 1 MiB",
+    "ja": "設定ファイルが 1 MiB を超えています"
+  },
+  "config.parse_error": {
+    "zh-CN": "插件配置无法解析：{source} · {error}",
+    "en": "Cannot parse plugin configuration: {source} · {error}",
+    "ja": "プラグイン設定を解析できません: {source} · {error}"
+  },
+  "phase.check_cache": {
+    "zh-CN": "检查扫描结果是否变化",
+    "en": "Checking for changes since scanning",
+    "ja": "スキャン結果からの変更を確認中"
+  },
+  "phase.rescan": {
+    "zh-CN": "扫描期间文件变化，重新检查",
+    "en": "Files changed during scanning; checking again",
+    "ja": "スキャン中にファイルが変更されたため、再確認中"
+  },
+  "scan.continuous_changes": {
+    "zh-CN": "扫描期间文件持续变化，请等文件写入完成后重试",
+    "en": "Files keep changing during scanning. Wait for writes to finish and retry.",
+    "ja": "スキャン中にファイルが継続的に変更されています。書き込み完了後に再試行してください。"
+  },
+  "script.execution_command": {
+    "zh-CN": "脚本执行命令",
+    "en": "script execution command",
+    "ja": "スクリプト実行コマンド"
+  },
+  "script.loading_command": {
+    "zh-CN": "外部脚本加载命令",
+    "en": "external script loading command",
+    "ja": "外部スクリプト読み込みコマンド"
+  },
+  "script.external_command": {
+    "zh-CN": "第 {line} 行含{kind} {name}，需核对外部依赖",
+    "en": "Line {line} contains a {kind} {name}; review external dependencies",
+    "ja": "{line} 行目に{kind} {name} があります。外部依存関係を確認してください"
+  },
+  "script.explicit_gizmo": {
+    "zh-CN": "第 {line} 行直接引用外部 Gizmo 路径 {path}，尚未收集，需核对接收方路径",
+    "en": "Line {line} directly references external Gizmo path {path}, which was not collected; verify the recipient's path",
+    "ja": "{line} 行目は外部 Gizmo パス {path} を直接参照しています。未収集のため、受取側のパスを確認してください"
+  },
+  "script.tcl_command": {
+    "zh-CN": "第 {line} 行含 Tcl 命令 {command}，执行及依赖未经验证",
+    "en": "Line {line} contains Tcl command {command}; execution and dependencies are unverified",
+    "ja": "{line} 行目に Tcl コマンド {command} があります。実行内容と依存関係は未検証です"
+  },
+  "script.dynamic_command": {
+    "zh-CN": "动态命令",
+    "en": "dynamic command",
+    "ja": "動的コマンド"
+  },
+  "script.depth": {
+    "zh-CN": "Tcl 命令嵌套过深，脚本依赖未经验证",
+    "en": "Tcl command nesting is too deep; script dependencies are unverified",
+    "ja": "Tcl コマンドのネストが深すぎます。スクリプトの依存関係は未検証です"
+  },
+  "discovery.read_error": {
+    "zh-CN": "无法读取目录 · {path}",
+    "en": "Cannot read folder · {path}",
+    "ja": "フォルダーを読み込めません · {path}"
+  },
+  "discovery.file_missing": {
+    "zh-CN": "找不到文件 · {name}",
+    "en": "File not found · {name}",
+    "ja": "ファイルが見つかりません · {name}"
+  },
+  "discovery.no_projects": {
+    "zh-CN": "未找到 .nk · {name}",
+    "en": "No .nk projects found · {name}",
+    "ja": ".nk プロジェクトが見つかりません · {name}"
+  },
+  "picker.windows_error": {
+    "zh-CN": "Windows 文件选择器错误：0x{code:08X}",
+    "en": "Windows file picker error: 0x{code:08X}",
+    "ja": "Windows ファイル選択エラー: 0x{code:08X}"
+  },
+  "picker.invalid_selection": {
+    "zh-CN": "请选择有效的文件夹或 .nk 工程：\n{path}",
+    "en": "Select a valid folder or .nk project:\n{path}",
+    "ja": "有効なフォルダーまたは .nk プロジェクトを選択してください:\n{path}"
+  },
+  "picker.add_error": {
+    "zh-CN": "无法添加所选项目",
+    "en": "Cannot Add Selected Items",
+    "ja": "選択した項目を追加できません"
+  },
+  "picker.file_filter": {
+    "zh-CN": "Nuke 工程 (*.nk)",
+    "en": "Nuke Projects (*.nk)",
+    "ja": "Nuke プロジェクト (*.nk)"
+  },
+  "picker.title": {
+    "zh-CN": "添加工程：选择文件夹或 .nk",
+    "en": "Add Projects: Choose Folders or .nk Files",
+    "ja": "プロジェクトを追加: フォルダーまたは .nk を選択"
+  },
+  "action.open": {
+    "zh-CN": "打开",
+    "en": "Open",
+    "ja": "開く"
+  },
+  "picker.instructions": {
+    "zh-CN": "Ctrl / Shift 多选文件夹或 .nk，然后点击“添加选中项”。",
+    "en": "Ctrl / Shift to select folders or .nk files, then click Add Selected Items.",
+    "ja": "Ctrl / Shift でフォルダーや .nk を複数選択し、「選択項目を追加」をクリックしてください。"
+  },
+  "picker.add_selected": {
+    "zh-CN": "添加选中项",
+    "en": "Add Selected Items",
+    "ja": "選択項目を追加"
+  },
+  "result.failed": {
+    "zh-CN": "未成功",
+    "en": "Not successful",
+    "ja": "未成功"
+  },
+  "result.success": {
+    "zh-CN": "成功",
+    "en": "Success",
+    "ja": "成功"
+  },
+  "result.partial": {
+    "zh-CN": "部分成功",
+    "en": "Partial success",
+    "ja": "一部成功"
+  },
+  "result.external": {
+    "zh-CN": "不打包（接收方安装）",
+    "en": "Not packaged (recipient installs)",
+    "ja": "同梱対象外（受取側でインストール）"
+  },
+  "readme.title": {
+    "zh-CN": "# 打包结果",
+    "en": "# Packaging Results",
+    "ja": "# パッケージ化の結果"
+  },
+  "readme.generated_by": {
+    "zh-CN": "生成工具：{label}",
+    "en": "Generated by: {label}",
+    "ja": "生成ツール: {label}"
+  },
+  "readme.summary": {
+    "zh-CN": "成功 {success} 项 · 部分成功 {partial} 项 · 未成功 {failed} 项",
+    "en": "Success: {success} · Partial success: {partial} · Not successful: {failed}",
+    "ja": "成功: {success} 件 · 一部成功: {partial} 件 · 未成功: {failed} 件"
+  },
+  "readme.media_title": {
+    "zh-CN": "## 素材",
+    "en": "## Assets",
+    "ja": "## 素材"
+  },
+  "readme.media_table": {
+    "zh-CN": "| 节点 | 素材 / 序列 | 打包状态 | 已收集文件数 |",
+    "en": "| Node | Asset / Sequence | Packaging Status | Files Collected |",
+    "ja": "| ノード | 素材 / シーケンス | パッケージ化の状態 | 収集ファイル数 |"
+  },
+  "readme.no_assets": {
+    "zh-CN": "无素材。",
+    "en": "No assets.",
+    "ja": "素材はありません。"
+  },
+  "readme.fonts_title": {
+    "zh-CN": "## 字体（fonts）",
+    "en": "## Fonts (fonts)",
+    "ja": "## フォント（fonts）"
+  },
+  "readme.fonts_table": {
+    "zh-CN": "| 节点 | 字体 | 打包状态 |",
+    "en": "| Node | Font | Packaging Status |",
+    "ja": "| ノード | フォント | パッケージ化の状態 |"
+  },
+  "readme.no_fonts": {
+    "zh-CN": "无字体收集项。",
+    "en": "No fonts to collect.",
+    "ja": "収集対象のフォントはありません。"
+  },
+  "readme.plugins_title": {
+    "zh-CN": "## 插件",
+    "en": "## Plugins",
+    "ja": "## プラグイン"
+  },
+  "readme.plugins_table": {
+    "zh-CN": "| 插件 | 打包状态 |",
+    "en": "| Plugin | Packaging Status |",
+    "ja": "| プラグイン | パッケージ化の状態 |"
+  },
+  "readme.external_plugins": {
+    "zh-CN": "外部插件不随包提供，接收方需安装兼容版本并配置授权。",
+    "en": "External plugins are not included. Recipients must install compatible versions and configure licenses.",
+    "ja": "外部プラグインは同梱されません。受取側で互換性のあるバージョンをインストールし、ライセンスを設定してください。"
+  },
+  "readme.no_plugins": {
+    "zh-CN": "无插件收集项。",
+    "en": "No plugins to collect.",
+    "ja": "収集対象のプラグインはありません。"
+  },
+  "readme.open_title": {
+    "zh-CN": "## 打开工程",
+    "en": "## Opening the Project",
+    "ja": "## プロジェクトを開く"
+  },
+  "readme.plugin_path": {
+    "zh-CN": "打开工程前，在 Nuke 的 Script Editor（Python）中将本包 `gizmos` 文件夹加入搜索路径：",
+    "en": "Before opening the project, add this package's `gizmos` folder to Nuke's search path in the Script Editor (Python):",
+    "ja": "プロジェクトを開く前に、Nuke の Script Editor（Python）で本パッケージの `gizmos` フォルダーを検索パスに追加してください:"
+  },
+  "readme.plugin_example": {
+    "zh-CN": "nuke.pluginAddPath(r\"D:/交付包实际路径/gizmos\")",
+    "en": "nuke.pluginAddPath(r\"D:/delivery/path/gizmos\")",
+    "ja": "nuke.pluginAddPath(r\"D:/delivery/path/gizmos\")"
+  },
+  "readme.plugin_path_hint": {
+    "zh-CN": "将示例路径替换为当前交付包的位置。移动交付包后需重新指定；也可由接收方统一配置插件搜索路径。",
+    "en": "Replace the example path with this package's location. Update it after moving the package, or let the recipient configure plugin search paths centrally.",
+    "ja": "例のパスを現在の納品パッケージの場所に置き換えてください。移動後は再設定するか、受取側でプラグイン検索パスをまとめて設定してください。"
+  },
+  "readme.relative": {
+    "zh-CN": "推荐交付：{filename}。素材与字体使用相对路径，移动整个文件夹后仍可读取。",
+    "en": "Recommended for delivery: {filename}. Assets and fonts use relative paths and remain accessible when the entire folder is moved.",
+    "ja": "納品には {filename} を推奨します。素材とフォントは相対パスを使用し、フォルダー全体を移動しても読み込めます。"
+  },
+  "readme.absolute": {
+    "zh-CN": "固定位置使用：{filename}。素材与字体使用打包位置的绝对路径，移动后需改用 relative 版或重新打包。",
+    "en": "For a fixed location: {filename}. Assets and fonts use absolute paths to the packaged location. After moving, use the relative version or repackage.",
+    "ja": "固定の場所では {filename} を使用します。素材とフォントはパッケージ化時の絶対パスを使用します。移動後は relative 版を使用するか、再パッケージ化してください。"
+  },
+  "readme.relink_scope": {
+    "zh-CN": "两份工程仅重链接成功收集的文件；未收集项保留原引用，请核对表格和报告。",
+    "en": "Both versions relink only successfully collected files. Uncollected items keep their original references; check the tables and report.",
+    "ja": "両バージョンとも収集に成功したファイルのみ再リンクします。未収集の項目は元の参照を保持するため、表とレポートを確認してください。"
+  },
+  "readme.font_loading": {
+    "zh-CN": "Text2 的字体文件在 fonts 中，通过工程字体搜索目录加载；无需安装到系统。",
+    "en": "Text2 font files are in fonts and load through the project's font search folder. No system font installation is required.",
+    "ja": "Text2 のフォントは fonts 内にあり、プロジェクトのフォント検索フォルダーから読み込まれます。システムへのインストールは不要です。"
+  },
+  "readme.open_project": {
+    "zh-CN": "使用已配置好插件环境的 Nuke 打开 {filename}。",
+    "en": "Open {filename} in Nuke with the required plugins configured.",
+    "ja": "必要なプラグインを設定した Nuke で {filename} を開いてください。"
+  },
+  "readme.original": {
+    "zh-CN": "原路径版本：{filename}。保留原工程内容和原始路径，供对照或在原环境中使用。",
+    "en": "Original-path version: {filename}. Preserves the original project contents and paths for comparison or use in the original environment.",
+    "ja": "元パス版: {filename}。比較や元の環境での使用に向けて、元のプロジェクト内容とパスを保持しています。"
+  },
+  "readme.original_dependencies": {
+    "zh-CN": "此版本依赖原素材和插件环境；相对路径仍以原工程目录或原 project_directory 为基准。",
+    "en": "This version depends on the original assets and plugin environment. Relative paths remain based on the original project folder or project_directory.",
+    "ja": "このバージョンは元の素材とプラグイン環境に依存します。相対パスの基準は元のプロジェクトフォルダーまたは project_directory のままです。"
+  },
+  "readme.scripts": {
+    "zh-CN": "按钮与回调脚本已原样保留，脚本依赖未经验证；核对清单见 `report.json`。",
+    "en": "Button and callback scripts are preserved unchanged; script dependencies are unverified. See the review list in `report.json`.",
+    "ja": "ボタンとコールバックのスクリプトは原文を保持しています。依存関係は未検証です。`report.json` の確認リストを参照してください。"
+  },
+  "readme.move_folder": {
+    "zh-CN": "移动时请搬走整个文件夹。",
+    "en": "Always move the entire folder together.",
+    "ja": "移動するときはフォルダー全体を移動してください。"
+  },
+  "readme.report_hint": {
+    "zh-CN": "状态表示文件收集结果；详细原因、完整路径和校验信息见 `report.json`。",
+    "en": "Statuses describe file collection results. See `report.json` for detailed reasons, full paths and verification information.",
+    "ja": "状態はファイルの収集結果を示します。詳細な理由、完全なパス、検証情報は `report.json` を参照してください。"
+  },
+  "progress.completed": {
+    "zh-CN": "已完成 {done}/{total} 个工程",
+    "en": "Projects completed: {done}/{total}",
+    "ja": "完了したプロジェクト: {done}/{total}"
+  },
+  "menu.language": {
+    "zh-CN": "语言 / Language",
+    "en": "Language",
+    "ja": "言語 / Language"
+  },
+  "settings.error": {
+    "zh-CN": "设置无法保存到 {path}：{error}。本次仍可使用，关闭后将无法记住更改。",
+    "en": "Cannot save settings to {path}: {error}. You can continue, but changes will not be remembered after closing.",
+    "ja": "設定を {path} に保存できません: {error}。使用は続行できますが、終了後に変更は保持されません。"
+  },
+  "settings.recovered": {
+    "zh-CN": "设置文件损坏，已备份并恢复默认设置。",
+    "en": "The settings file was damaged. A backup was kept and defaults restored.",
+    "ja": "設定ファイルが破損していたため、バックアップを保存して既定値に戻しました。"
+  },
+  "settings.open": {
+    "zh-CN": "打开设置目录",
+    "en": "Open Settings Folder",
+    "ja": "設定フォルダーを開く"
+  },
+  "settings.hint": {
+    "zh-CN": "语言与窗口布局自动保存在：{path}",
+    "en": "Language and window layout are saved automatically to: {path}",
+    "ja": "言語とウィンドウ配置の自動保存先: {path}"
+  },
+  "common.list_separator": {
+    "zh-CN": "，",
+    "en": ", ",
+    "ja": "、"
+  },
+  "common.note_separator": {
+    "zh-CN": "；",
+    "en": "; ",
+    "ja": "、"
+  }
+}

@@ -1,7 +1,10 @@
 """Concise delivery summary derived from the completed package report."""
+from i18n import status_code, status_message
+from i18n import message as msg, fmt, join_messages, error_message
 from collections import Counter
 from html import escape
 from app_version import APP_LABEL
+from i18n import Translator
 
 
 def cell(value):
@@ -14,68 +17,68 @@ def filename(value):
 
 def asset_result(asset):
     if not asset.get('packed_path') or not asset.get('files', 0):
-        return '未成功'
-    return '成功' if asset.get('status') == '就绪' else '部分成功'
+        return msg('result.failed')
+    return msg('result.success') if status_code(asset.get('status')) == 'ready' else msg('result.partial')
 
 
 def plugin_result(plugin):
-    if plugin.get('status') == '外部依赖':
-        return '不打包（接收方安装）'
-    return '成功' if plugin.get('status') == '已收集' and plugin.get('packed_path') else '未成功'
+    if status_code(plugin.get('status')) == 'external':
+        return msg('result.external')
+    return msg('result.success') if status_code(plugin.get('status')) == 'collected' and plugin.get('packed_path') else msg('result.failed')
 
 
-def render_package_readme(report):
+def render_package_readme(report, language='zh-CN'):
     assets, plugins = report.get('assets', []), report.get('plugins', [])
     fonts = [asset for asset in assets if asset.get('kind') == 'font']
     media = [asset for asset in assets if asset.get('kind') != 'font']
     script = cell(filename(report['source_script']))
     counts = Counter([asset_result(a) for a in assets] + [plugin_result(p) for p in plugins])
-    lines = ['# 打包结果', '', f'生成工具：{APP_LABEL}', '', f'工程：{script}', '',
-             f'成功 {counts["成功"]} 项 · 部分成功 {counts["部分成功"]} 项 · 未成功 {counts["未成功"]} 项', '',
-             '## 素材', '']
+    lines = [msg('readme.title'), '', msg('readme.generated_by', label=APP_LABEL), '', msg('detail.project', path=script), '',
+             msg('readme.summary', success=counts[msg('result.success')], partial=counts[msg('result.partial')], failed=counts[msg('result.failed')]), '',
+             msg('readme.media_title'), '']
     if media:
-        lines += ['| 节点 | 素材 / 序列 | 打包状态 | 已收集文件数 |', '| --- | --- | --- | ---: |']
+        lines += [msg('readme.media_table'), '| --- | --- | --- | ---: |']
         for asset in media:
-            lines.append(f'| {cell(asset.get("node", ""))} | {cell(filename(asset.get("original", "")))} | '
-                         f'{asset_result(asset)} | {asset.get("files", 0) if asset.get("packed_path") else 0} |')
+            lines.append(fmt('| {value0} | {value1} | {value2} | {value3} |', value0=cell(asset.get('node', '')), value1=cell(filename(asset.get('original', ''))), value2=asset_result(asset), value3=asset.get('files', 0) if asset.get('packed_path') else 0))
     else:
-        lines.append('无素材。')
-    lines += ['', '## 字体（fonts）', '']
+        lines.append(msg('readme.no_assets'))
+    lines += ['', msg('readme.fonts_title'), '']
     if fonts:
-        lines += ['| 节点 | 字体 | 打包状态 |', '| --- | --- | --- |']
+        lines += [msg('readme.fonts_table'), '| --- | --- | --- |']
         for asset in fonts:
-            lines.append(f'| {cell(asset.get("node", ""))} | {cell(filename(asset.get("original", "")))} | {asset_result(asset)} |')
+            lines.append(fmt('| {value0} | {value1} | {value2} |', value0=cell(asset.get('node', '')), value1=cell(filename(asset.get('original', ''))), value2=asset_result(asset)))
     else:
-        lines.append('无字体收集项。')
+        lines.append(msg('readme.no_fonts'))
     if report.get('font_warnings'):
         lines += ['', *report['font_warnings']]
-    lines += ['', '## 插件', '']
+    lines += ['', msg('readme.plugins_title'), '']
     if plugins:
-        lines += ['| 插件 | 打包状态 |', '| --- | --- |']
+        lines += [msg('readme.plugins_table'), '| --- | --- |']
         for plugin in plugins:
-            lines.append(f'| {cell(plugin.get("name", ""))} | {plugin_result(plugin)} |')
-        if any(p.get('status') == '外部依赖' for p in plugins):
-            lines += ['', '外部插件不随包提供，接收方需安装兼容版本并配置授权。']
+            lines.append(fmt('| {value0} | {value1} |', value0=cell(plugin.get('name', '')), value1=plugin_result(plugin)))
+        if any((status_code(p.get('status')) == 'external' for p in plugins)):
+            lines += ['', msg('readme.external_plugins')]
     else:
-        lines.append('无插件收集项。')
-    lines += ['', '## 打开工程', '']
-    if any(p.get('status') == '已收集' for p in plugins):
-        lines += ['打开工程前，在 Nuke 的 Script Editor（Python）中将本包 `gizmos` 文件夹加入搜索路径：', '',
-                  '```python', 'import nuke', 'nuke.pluginAddPath(r"D:/交付包实际路径/gizmos")', '```', '',
-                  '将示例路径替换为当前交付包的位置。移动交付包后需重新指定；也可由接收方统一配置插件搜索路径。', '']
+        lines.append(msg('readme.no_plugins'))
+    lines += ['', msg('readme.open_title'), '']
+    if any((status_code(p.get('status')) == 'collected' for p in plugins)):
+        lines += [msg('readme.plugin_path'), '',
+                  '```python', 'import nuke', msg('readme.plugin_example'), '```', '',
+                  msg('readme.plugin_path_hint'), '']
     if report.get('relative_script') and report.get('relinked_script'):
-        lines += [f'推荐交付：{cell(report["relative_script"])}。素材与字体使用相对路径，移动整个文件夹后仍可读取。', '',
-                  f'固定位置使用：{cell(report["relinked_script"])}。素材与字体使用打包位置的绝对路径，移动后需改用 relative 版或重新打包。', '',
-                  '两份工程仅重链接成功收集的文件；未收集项保留原引用，请核对表格和报告。',
-                  'Text2 的字体文件在 fonts 中，通过工程字体搜索目录加载；无需安装到系统。']
+        lines += [msg('readme.relative', filename=cell(report['relative_script'])), '',
+                  msg('readme.absolute', filename=cell(report['relinked_script'])), '',
+                  msg('readme.relink_scope'),
+                  msg('readme.font_loading')]
     else:
-        lines.append(f'使用已配置好插件环境的 Nuke 打开 {script}。')
+        lines.append(msg('readme.open_project', filename=script))
     if report.get('original_path_script'):
         original = cell(report['original_path_script'])
-        lines += ['', f'原路径版本：{original}。保留原工程内容和原始路径，供对照或在原环境中使用。',
-                  '此版本依赖原素材和插件环境；相对路径仍以原工程目录或原 project_directory 为基准。']
+        lines += ['', msg('readme.original', filename=original),
+                  msg('readme.original_dependencies')]
     if report.get('script_dependency_warnings'):
-        lines += ['', '按钮与回调脚本已原样保留，脚本依赖未经验证；核对清单见 `report.json`。']
-    lines += ['', '移动时请搬走整个文件夹。', '',
-              '状态表示文件收集结果；详细原因、完整路径和校验信息见 `report.json`。', '']
-    return '\n'.join(lines)
+        lines += ['', msg('readme.scripts')]
+    lines += ['', msg('readme.move_folder'), '',
+              msg('readme.report_hint'), '']
+    translator = Translator(language)
+    return '\n'.join(translator.render(line) for line in lines)

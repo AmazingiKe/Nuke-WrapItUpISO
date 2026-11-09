@@ -2,12 +2,16 @@
 
 from pathlib import Path
 import json
+import sys
 from PyInstaller.utils.win32.versioninfo import (
     VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
     VarFileInfo, VarStruct,
 )
 
 project_root = Path(SPECPATH).resolve().parent
+sys.path.insert(0, str(project_root))
+from i18n import CATALOG, validate_catalog
+validate_catalog(CATALOG)
 metadata = json.loads((project_root / 'version.json').read_text(encoding='utf-8'))
 app_name, app_version = metadata['name'], metadata['version']
 release_name = f'{app_name} {app_version}'
@@ -28,7 +32,8 @@ a = Analysis(
     [str(project_root / 'app.py')],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[(str(project_root / 'version.json'), '.'), (str(project_root / 'assets'), 'assets')],
+    datas=[(str(project_root / 'version.json'), '.'), (str(project_root / 'assets'), 'assets'),
+           (str(project_root / 'locales'), 'locales')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

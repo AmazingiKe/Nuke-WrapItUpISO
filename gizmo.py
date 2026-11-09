@@ -1,4 +1,6 @@
 """Static Gizmo dependency collection. Never import a source init/menu script."""
+from i18n import status_code, status_message
+from i18n import message as msg, fmt, join_messages, error_message
 from dataclasses import dataclass, field
 import hashlib
 import os
@@ -9,7 +11,7 @@ import re
 @dataclass
 class Plugin:
     name: str
-    status: str = '未找到'
+    status: str = msg('status.not_found')
     source: str = ''
     candidates: list = field(default_factory=list)
     note: str = ''
@@ -52,7 +54,7 @@ def index_plugins(paths, cancel, progress, *, observe=None):
             continue
         if root in visited: continue
         visited.add(root)
-        progress(0, 0, f'查找插件：{root.name}')
+        progress(0, 0, msg('phase.find_plugins', name=root.name))
         try:
             files = []
             # Nuke searches registered directories, not arbitrary backup subfolders.
@@ -65,7 +67,7 @@ def index_plugins(paths, cancel, progress, *, observe=None):
             for file in sorted(files):
                 index.setdefault(file.stem.casefold(), []).append(file)
         except OSError as error:
-            errors.append(f'插件目录读取失败：{error.filename or root}')
+            errors.append(msg('plugin.folder_error', path=error.filename or root))
     return index, errors
 
 
@@ -82,7 +84,7 @@ def validate_definition(text):
     from core import node_blocks, words
     blocks = list(node_blocks(text))
     if not blocks or blocks[0][0] not in {'Gizmo', 'Group'}:
-        raise ValueError('没有 Gizmo/Group 定义')
+        raise ValueError(msg('gizmo.no_definition'))
     tokens = list(words(text))
     depth = 0
     started = False
@@ -93,17 +95,17 @@ def validate_definition(text):
         if token.value == 'end_group':
             depth -= 1
             if depth < 0:
-                raise ValueError('多余的 end_group')
+                raise ValueError(msg('gizmo.extra_end'))
         elif i + 1 < len(tokens) and text[tokens[i + 1].start:tokens[i + 1].start + 1] == '{':
             if token.value in {'Gizmo', 'Group'}:
                 if started and depth == 0:
-                    raise ValueError('包含多个顶层定义')
+                    raise ValueError(msg('gizmo.multiple_roots'))
                 depth += 1
                 started = True
             elif started and depth == 0:
-                raise ValueError('节点位于 Gizmo 定义之外')
+                raise ValueError(msg('gizmo.outside_definition'))
     if depth:
-        raise ValueError('缺少 end_group，Gizmo 定义未结束')
+        raise ValueError(msg('gizmo.missing_end'))
 
 
 def code_dependencies(text):
@@ -122,7 +124,7 @@ def code_dependencies(text):
             if key in values and values[key].value.strip():
                 token = values[key]
                 if not is_ui_callback(text[token.start:token.end]):
-                    reasons.append(f'{location}：含 {key} 回调，需核对脚本依赖')
+                    reasons.append(msg('script.callback', location=location, knob=key))
         for key, token in values.items():
             if key in callbacks or key == 'addUserKnob':
                 continue
@@ -130,7 +132,7 @@ def code_dependencies(text):
             if any(command not in {'value', 'file', 'frame', 'expr', 'exists', 'metadata',
                                    'lrange', 'lindex', 'llength', 'split', 'join', 'list', 'string', 'format'}
                    for command in commands):
-                reasons.append(f'{location} / {key}：含脚本表达式，需核对运行时依赖')
+                reasons.append(msg('script.expression', location=location, knob=key))
         # addUserKnob may repeat, so do not use the knob dictionary for declarations.
         tokens = list(words(body))
         for a, b in zip(tokens, tokens[1:]):
@@ -138,15 +140,15 @@ def code_dependencies(text):
                 continue
             declaration = list(words(b.value))
             if declaration and declaration[0].value == '22':
-                button = declaration[1].value if len(declaration) > 1 else '未命名'
-                reasons.append(f'{location} / {button}：含 Python/Tcl 按钮，需核对脚本依赖')
+                button = declaration[1].value if len(declaration) > 1 else msg('label.unnamed')
+                reasons.append(msg('script.button', location=location, button=button))
     return list(dict.fromkeys(reasons))
 
 
 def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None):
     from core import COMMON_CLASSES, Cancelled, _scan_media, node_blocks, knobs, is_gizmo_reference
     from plugin_paths import discover_paths
-    plan.warnings.append('已检查显式 Gizmo 依赖；二进制插件兼容性、隐式 OCIO 和渲染结果仍需在 Nuke 中核对。')
+    plan.warnings.append(msg('validation.scope'))
     roots = default_paths()
     if plan.snapshot:
         for root in roots: plan.snapshot.watch(root)
@@ -157,11 +159,11 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     def inspect_code(text, owner):
         from script_scan import inspect_commands
         commands, uncertain = inspect_commands(text)
-        reviews = [f'{owner} / {reason}' for reason in code_dependencies(text) + uncertain]
+        reviews = [fmt('{value0} / {value1}', value0=owner, value1=reason) for reason in code_dependencies(text) + uncertain]
         plan.script_warnings.extend(reviews)
         if plan.automatic_plugins:
-            plan.warnings.extend(f'脚本待核对（已原样保留，不阻止打包）：{reason}' for reason in reviews)
-        blockers = [f'{owner}：{reason}' for reason in commands]
+            plan.warnings.extend((msg('script.preserved_review', reason=reason) for reason in reviews))
+        blockers = [fmt('{value0}：{value1}', value0=owner, value1=reason) for reason in commands]
         return blockers if plan.automatic_plugins else blockers + reviews
 
     plan.plugin_errors.extend(inspect_code(plan.text, plan.script.name))
@@ -194,26 +196,26 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             if owner not in plugin.used_by:
                 plugin.used_by.append(owner)
             if name in active:
-                plugin.status = '待核对'
-                plugin.note = '循环 Gizmo 依赖：' + ' → '.join(active + [name])
+                plugin.status = msg('status.needs_review')
+                plugin.note = msg('gizmo.cycle') + ' → '.join(active + [name])
             return
         plugin = Plugin(name, used_by=[owner])
         found[name] = plugin
         plan.plugins.append(plugin)
         if re.fullmatch(r'OFX[A-Za-z_]\w*(?:\.[\w-]+)+', name):
-            plugin.status = '外部依赖'
-            plugin.note = 'OFX 插件不参与打包；接收方需自行安装兼容版本并配置授权。'
+            plugin.status = msg('status.external')
+            plugin.note = msg('plugin.ofx_external')
             return
         explicit = is_gizmo_reference(name)
         if not explicit and any(p.name != name and p.name.casefold() == name.casefold() for p in plan.plugins):
-            plugin.status, plugin.note = '同名冲突', '节点名称仅大小写不同，无法安全写入同一插件目录'
+            plugin.status, plugin.note = msg('status.conflict'), msg('gizmo.case_conflict')
             return
         if not explicit and not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
-            plugin.status, plugin.note = '待核对', '节点名称无法安全映射为 Gizmo 文件名'
+            plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.unsafe_name')
             return
         if explicit:
             if any(char in name for char in '[]$\n\r;') or not Path(name).is_absolute():
-                plugin.note = 'Gizmo 引用不是可确定的绝对路径，保留原引用，需核对接收方路径。'
+                plugin.note = msg('gizmo.dynamic_reference')
                 return
             source = Path(name).resolve()
             plugin.source = str(source)
@@ -223,7 +225,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             try:
                 candidates = [source] if source.is_file() else []
             except OSError as error:
-                plugin.status, plugin.note = '待核对', f'显式 Gizmo 路径无法访问：{error}'
+                plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.explicit_access', error=error_message(error))
                 return
         else:
             candidates = index.get(name.casefold(), [])
@@ -233,38 +235,38 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         plugin.candidates = [str(p) for p in candidates]
         if not candidates:
             if explicit:
-                plugin.note = '工程指定的 Gizmo 文件未找到，保留原引用；不会以搜索目录中的同名文件替代。'
+                plugin.note = msg('gizmo.explicit_missing')
                 return
-            plugin.note = ('未找到对应文件，跳过收集并继续打包；也可能是未收录的内置节点。'
+            plugin.note = (msg('plugin.missing_skipped')
                            if plan.automatic_plugins else
-                           '未找到对应文件；也可能是未收录的内置节点。')
+                           msg('plugin.missing'))
             return
         binary = next((p for p in candidates if p.parent == candidates[0].parent and p.suffix.lower() != '.gizmo'), None)
         if binary is not None:
-            plugin.status, plugin.source = '外部依赖', str(binary)
-            plugin.note = '二进制插件不参与打包；接收方需自行安装兼容版本、关联库并配置授权。'
+            plugin.status, plugin.source = msg('status.external'), str(binary)
+            plugin.note = msg('plugin.binary_external')
             if any(p.suffix.lower() == '.gizmo' for p in candidates):
-                plugin.note += '最高优先级目录存在二进制候选及同名 Gizmo，保留外部依赖引用，请核对接收方版本。'
+                plugin.note += msg('plugin.binary_priority')
             return
         if any(p.suffix.lower() != '.gizmo' for p in candidates):
-            plan.warnings.append(f'{name}：存在较低优先级的同名二进制插件，按搜索顺序收集 {candidates[0]}，请核对接收方版本。')
+            plan.warnings.append(msg('plugin.lower_binary', name=name, path=candidates[0]))
             candidates = [p for p in candidates if p.suffix.lower() == '.gizmo']
         try:
             hashes = {digest_file(p, cancel) for p in candidates}
         except OSError as error:
-            plugin.status, plugin.note = '待核对', f'插件文件读取失败：{error}'
+            plugin.status, plugin.note = msg('status.needs_review'), msg('plugin.read_error', error=error_message(error))
             return
         if len(hashes) != 1:
             if not plan.automatic_plugins:
-                plugin.status, plugin.note = '同名冲突', '同名文件内容不同'
+                plugin.status, plugin.note = msg('status.conflict'), msg('plugin.different_contents')
                 return
-            plan.warnings.append(f'{name}：同名版本不同，按搜索顺序自动选择 {candidates[0]}')
+            plan.warnings.append(msg('plugin.auto_select', name=name, path=candidates[0]))
         source = candidates[0]
         # One physical document may be referenced by both a class and a path.
         source = next((Path(owner) for owner in plan.documents if Path(owner) == source), source)
         plugin.source = str(source)
         if len(active) >= 100:
-            plugin.status, plugin.note = '待核对', 'Gizmo 嵌套超过 100 层，请检查依赖'
+            plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.depth')
             return
         try:
             nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot, media_index=media_index)
@@ -272,21 +274,21 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             plugin.sha256 = hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest()
             plan.documents[str(source)] = (nested.text, nested.encoding, plugin.sha256)
             custom_knobs[name] = file_knobs(nested.text)
-            plugin.status, plugin.note = '就绪', '已找到，显式素材与插件依赖已扫描'
+            plugin.status, plugin.note = msg('status.ready'), msg('plugin.ready_note')
             reasons = inspect_code(nested.text, source.name)
             if reasons:
-                plugin.status, plugin.note = '待核对', '；'.join(reasons)
+                plugin.status, plugin.note = msg('status.needs_review'), join_messages(msg('common.note_separator'), reasons)
             active.append(name)
             for child, node in references(nested.text):
                 if child not in plugin.dependencies:
                     plugin.dependencies.append(child)
-                visit(child, f'{name} / {node}')
+                visit(child, fmt('{value0} / {value1}', value0=name, value1=node))
             active.pop()
         except (OSError, ValueError) as error:
-            plugin.status, plugin.note = '待核对', f'Gizmo 解析失败：{error}'
+            plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.parse_error', error=error_message(error))
 
     for name, node in root_references:
-        visit(name, f'{plan.script.name} / {node}')
+        visit(name, fmt('{value0} / {value1}', value0=plan.script.name, value1=node))
     occupied = {p.name.casefold() for p in plan.plugins if not is_gizmo_reference(p.name)}
     for plugin in plan.plugins:
         if not is_gizmo_reference(plugin.name):
@@ -296,10 +298,10 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             continue
         stem = re.sub(r'[^A-Za-z0-9_]', '_', Path(plugin.source).stem)[:48].lower() or 'gizmo'
         suffix = hashlib.sha256(os.path.normcase(plugin.source).encode('utf-8')).hexdigest()[:12]
-        base = f'wui_{stem}_{suffix}'
+        base = fmt('wui_{value0}_{value1}', value0=stem, value1=suffix)
         alias, counter = base, 2
         while alias.casefold() in occupied:
-            alias = f'{base}_{counter}'
+            alias = fmt('{value0}_{value1}', value0=base, value1=counter)
             counter += 1
         occupied.add(alias.casefold())
         plugin.packed_name = alias
@@ -307,7 +309,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     # This includes overrides saved on each instance, not only template defaults.
     rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot, media_index=media_index)
     if hashlib.sha256(rescanned.text.encode(rescanned.encoding)).hexdigest() != plan.documents[str(plan.script)][2]:
-        plan.plugin_errors.append('扫描过程中工程发生变化，请重新扫描')
+        plan.plugin_errors.append(msg('scan.project_changed'))
     plan.assets = rescanned.assets
     scanned_sources = set()
     for plugin in plan.plugins:
@@ -320,43 +322,43 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         try:
             nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot, media_index=media_index)
             if hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest() != plugin.sha256:
-                raise ValueError('扫描过程中插件内容变化')
+                raise ValueError(msg('scan.plugin_changed'))
             for asset in nested.assets:
-                asset.node = f'{plugin.name} / {asset.node}'
-                asset.node_path = f'{plugin.name}_{asset.node_path}'
+                asset.node = fmt('{value0} / {value1}', value0=plugin.name, value1=asset.node)
+                asset.node_path = fmt('{value0}_{value1}', value0=plugin.name, value1=asset.node_path)
             plan.assets.extend(nested.assets)
-            if any(a.status != '就绪' for a in nested.assets):
-                plugin.status = '待核对'
-                plugin.note += '；内部素材存在缺失、缺帧或动态路径'
+            if any((status_code(a.status) != 'ready' for a in nested.assets)):
+                plugin.status = msg('status.needs_review')
+                plugin.note += msg('gizmo.internal_media')
         except (OSError, ValueError) as error:
-            plugin.status, plugin.note = '待核对', str(error)
+            plugin.status, plugin.note = msg('status.needs_review'), error_message(error)
     # A file override on an instance is also part of that plugin's dependency set.
-    if any(a.status != '就绪' and a.node_class in found for a in plan.assets):
-        plan.plugin_errors.append('Gizmo 自定义文件参数存在缺失或动态路径')
+    if any((status_code(a.status) != 'ready' and a.node_class in found for a in plan.assets)):
+        plan.plugin_errors.append(msg('gizmo.custom_paths'))
     changed = True
     while changed:
         changed = False
         for plugin in plan.plugins:
-            children = [name for name in plugin.dependencies if found[name].status not in {'就绪', '外部依赖'}
-                        and not (plan.automatic_plugins and found[name].status == '未找到')]
-            if plugin.status == '就绪' and children:
-                plugin.status = '待核对'
-                plugin.note = '内部插件依赖未解决：' + '、'.join(children)
+            children = [name for name in plugin.dependencies if status_code(found[name].status) not in {'ready', 'external'}
+                        and not (plan.automatic_plugins and status_code(found[name].status) == 'not_found')]
+            if status_code(plugin.status) == 'ready' and children:
+                plugin.status = msg('status.needs_review')
+                plugin.note = msg('gizmo.internal_plugins') + '、'.join(children)
                 changed = True
-    if any(plugin.status != '外部依赖' for plugin in plan.plugins):
+    if any((status_code(plugin.status) != 'external' for plugin in plan.plugins)):
         (plan.warnings if plan.automatic_plugins else plan.plugin_errors).extend(index_errors)
     else:
         plan.warnings.extend(index_errors)
     for plugin in plan.plugins:
-        if plugin.status != '就绪':
-            plan.warnings.append(f'{plugin.name} × {len(plugin.used_by)}：{plugin.status}；{plugin.note}')
+        if status_code(plugin.status) != 'ready':
+            plan.warnings.append(fmt('{value0} × {value1}：{value2}；{value3}', value0=plugin.name, value1=len(plugin.used_by), value2=plugin.status, value3=plugin.note))
     plan.warnings.extend(plan.plugin_errors)
 
 
 def reference_edits(text, plugins, *, aliases=None):
     from core import node_blocks
     if aliases is None:
-        aliases = {p.name: p.packed_name for p in plugins if p.status == '就绪' and p.packed_name}
+        aliases = {p.name: p.packed_name for p in plugins if status_code(p.status) == 'ready' and p.packed_name}
     return [(token.start, token.end, aliases[name])
             for name, _, _, token in node_blocks(text, class_tokens=True) if name in aliases]
 
@@ -365,7 +367,7 @@ def check_sources(plan, cancel):
     from core import DependencyError
     for path, (_, _, digest) in plan.documents.items():
         if digest_file(path, cancel) != digest:
-            raise DependencyError(f'扫描后文件发生变化，请重新扫描：{path}')
+            raise DependencyError(msg('verify.source_changed', path=path))
 
 
 def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, absolute_edits=None, aliases=None):
@@ -377,11 +379,8 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
         for plugin in plan.plugins:
             if cancel():
                 raise Cancelled()
-            if plugin.status != '就绪':
-                records.append({'name': plugin.name, 'original_reference': plugin.name, 'source': plugin.source, 'packed_path': None,
-                                'status': '外部依赖' if plugin.status == '外部依赖' else '未收集',
-                                'note': plugin.note, 'dependencies': plugin.dependencies,
-                                'used_by': plugin.used_by, 'candidates': plugin.candidates})
+            if status_code(plugin.status) != 'ready':
+                records.append({'name': plugin.name, 'original_reference': plugin.name, 'source': plugin.source, 'packed_path': None, 'status': msg('status.external') if status_code(plugin.status) == 'external' else msg('status.not_collected'), 'note': plugin.note, 'dependencies': plugin.dependencies, 'used_by': plugin.used_by, 'candidates': plugin.candidates})
                 continue
             text, encoding, _ = plan.documents[plugin.source]
             for start, end, value in sorted(edits.get(plugin.source, []), reverse=True):
@@ -393,14 +392,7 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
                 from delivery import apply_edits
                 absolute_path = folder / (aliases[plugin.name] + '.gizmo')
                 absolute_path.write_bytes(apply_edits(plan.documents[plugin.source][0], absolute_edits.get(plugin.source, [])).encode(encoding))
-            records.append({'name': plugin.name, 'original_reference': plugin.name,
-                            'packed_class': plugin.packed_name or plugin.name,
-                            'source': plugin.source, 'source_sha256': plugin.sha256,
-                            'packed_path': path.relative_to(stage).as_posix(), 'status': '已收集',
-                            'absolute_packed_path': absolute_path.relative_to(stage).as_posix() if absolute_path else None,
-                            'absolute_packed_class': aliases[plugin.name] if absolute_path else None,
-                            'dependencies': plugin.dependencies, 'used_by': plugin.used_by,
-                            'candidates': plugin.candidates})
+            records.append({'name': plugin.name, 'original_reference': plugin.name, 'packed_class': plugin.packed_name or plugin.name, 'source': plugin.source, 'source_sha256': plugin.sha256, 'packed_path': path.relative_to(stage).as_posix(), 'status': msg('status.collected'), 'absolute_packed_path': absolute_path.relative_to(stage).as_posix() if absolute_path else None, 'absolute_packed_class': aliases[plugin.name] if absolute_path else None, 'dependencies': plugin.dependencies, 'used_by': plugin.used_by, 'candidates': plugin.candidates})
     check_sources(plan, cancel)
     # A single destination read both verifies the copy and supplies the report hash.
     paths = {stage / relative for relative in hashes}
@@ -408,7 +400,7 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
         if cancel(): raise Cancelled()
         if path.is_file() and path.name != 'packaging_incomplete.txt': paths.add(path)
     total = len(paths)
-    if verify_progress: verify_progress(0, total, '开始校验')
+    if verify_progress: verify_progress(0, total, msg('phase.start_verify'))
     for done, path in enumerate(sorted(paths)):
         relative = path.relative_to(stage).as_posix()
         expected = hashes.get(relative)
@@ -419,12 +411,12 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
         else:
             actual = digest_file(path, cancel)
         if expected is not None and actual != expected:
-            raise DependencyError(f'打包文件校验失败：{relative}')
+            raise DependencyError(msg('verify.failed', path=relative))
         hashes[relative] = actual
         if verify_progress: verify_progress(done + 1, total, path.name)
     return {'plugins': records, 'gizmo_dependencies_complete': not plan.plugin_blockers
             and not plan.plugin_search_errors and not plan.script_warnings
-            and all(p.status == '就绪' for p in plan.plugins),
+            and all((status_code(p.status) == 'ready' for p in plan.plugins)),
             'script_dependencies_verified': False,
             'script_dependency_validation': 'static_only_runtime_not_verified',
             'script_dependency_warnings': plan.script_warnings,

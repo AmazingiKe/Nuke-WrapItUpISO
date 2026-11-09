@@ -1,5 +1,7 @@
 """Collect .nk assets without importing Nuke or executing script expressions."""
 from __future__ import annotations
+from i18n import status_code, status_message
+from i18n import message as msg, fmt, join_messages, error_message
 import os, re, json, hashlib, shutil, stat
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -32,7 +34,7 @@ def words(text):
                     depth -= 1
                     if depth == 0: i += 1; break
                 i += 1
-            if depth: raise ValueError('工程包含未闭合的括号或引号')
+            if depth: raise ValueError(msg('parse.unclosed'))
         else:
             while i < n and not text[i].isspace():
                 i += 2 if text[i] == '\\' else 1
@@ -185,7 +187,7 @@ class Plan:
         for plugin in self.plugins:
             if cancel(): raise Cancelled()
             path = Path(plugin.source)
-            if plugin.source and plugin.status == '就绪' and path not in seen:
+            if plugin.source and status_code(plugin.status) == 'ready' and path not in seen:
                 total += path.stat().st_size
                 seen.add(path)
                 if cancel(): raise Cancelled()
@@ -193,27 +195,27 @@ class Plan:
 
     @property
     def plugin_blockers(self):
-        return self.plugin_errors + [f'{p.name}：{p.status}；{p.note}' for p in self.plugins
-                                    if p.status not in {'就绪', '外部依赖'} and not (self.automatic_plugins and p.status == '未找到')]
+        return self.plugin_errors + [fmt('{value0}：{value1}；{value2}', value0=p.name, value1=p.status, value2=p.note) for p in self.plugins
+                                    if status_code(p.status) not in {'ready', 'external'} and not (self.automatic_plugins and status_code(p.status) == 'not_found')]
 
 def read_script(path):
     data = path.read_bytes()
     for enc in (('utf-8-sig' if data.startswith(b'\xef\xbb\xbf') else 'utf-8'),'gb18030'):
         try: return data.decode(enc), enc
         except UnicodeDecodeError: pass
-    raise ValueError('无法解码工程，请转换为 UTF-8 后重试')
+    raise ValueError(msg('parse.encoding'))
 
 def resolve(raw, base):
     if any(c in raw for c in '[]\n\r'):
-        raise ValueError('动态表达式：未执行，请手动处理')
+        raise ValueError(msg('parse.dynamic'))
     value = os.path.expandvars(raw).replace('\\', '/')
     if '$' in value or re.search(r'%[A-Za-z_]\w*%', value):
-        raise ValueError('环境变量未定义')
+        raise ValueError(msg('parse.undefined_env'))
     if any(c in value for c in '{}";'):
-        raise ValueError('特殊路径语法，需手动处理')
+        raise ValueError(msg('parse.special_path'))
     p = Path(value).expanduser()
     if not p.is_absolute() and base is None:
-        raise ValueError('project_directory 无法解析，相对素材路径需手动处理')
+        raise ValueError(msg('parse.project_directory'))
     return p if p.is_absolute() else base / p
 
 def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None):
@@ -225,7 +227,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     text, enc = read_script(path)
     blocks = [(cls, knobs(body, pos), groups, declared_file_knobs(body))
               for cls, pos, body, groups in node_blocks(text, scoped=True)]
-    progress(0, len(blocks), '解析工程完成')
+    progress(0, len(blocks), msg('phase.parsed'))
     base, warnings = path.parent, []
     for cls, k, groups, declared in blocks:
         if cancel(): raise Cancelled()
@@ -233,7 +235,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
             try: base = resolve(k['project_directory'].value, path.parent).resolve()
             except ValueError as e:
                 base = None
-                warnings.append('project_directory: '+str(e))
+                warnings.append('project_directory: ' + error_message(e))
     if base_override is not ...:
         base = base_override
     assets = []
@@ -255,7 +257,7 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                     snapshot.watch(source)
                     snapshot.watch(source.parent)
                 matches = list(SEQUENCE.finditer(source.name))
-                if len(matches) > 1: raise ValueError('多个序列占位符，需手动处理')
+                if len(matches) > 1: raise ValueError(msg('parse.multiple_sequences'))
                 if matches:
                     m = matches[0]; tok = m.group()
                     files, numbers = media_index.matches(source, m)
@@ -264,13 +266,13 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
                         first = int(k.get('first',Token(str(min(numbers)),0,0)).value)
                         last = int(k.get('last',Token(str(max(numbers)),0,0)).value)
                         if last-first <= 1000000: a.missing = sorted(set(range(first,last+1))-set(numbers))
-                    a.note = '收集目录中所有匹配帧'+(f'；声明范围缺 {len(a.missing)} 帧' if a.missing else '')
+                    a.note = msg('asset.all_frames')+(msg('asset.missing_range', count=len(a.missing)) if a.missing else '')
                 elif a.kind == 'font': a.files = font_files(source, media_index)
                 elif media_index.is_file(source): a.files = [source]
-                a.status = '缺帧' if a.missing else ('就绪' if a.files else '缺失')
+                a.status = msg('status.missing_frames') if a.missing else (msg('status.ready') if a.files else msg('status.missing'))
                 if snapshot:
                     for file in a.files: snapshot.watch(file)
-            except (ValueError,OSError) as e: a.status = '待处理'; a.note = str(e)
+            except (ValueError,OSError) as e: a.status = msg('status.pending'); a.note = error_message(e)
         progress(index, len(blocks), name)
     return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)),base=base)
 
@@ -308,7 +310,7 @@ def media_folders(assets, cancel=lambda: False):
             parents[max(left, right)] = min(left, right)
 
     folders, used, result = {}, set(), []
-    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {f'{p}{n}' for p in ('COM', 'LPT') for n in range(1, 10)}
+    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {fmt('{value0}{value1}', value0=p, value1=n) for p in ('COM', 'LPT') for n in range(1, 10)}
     for index, asset in enumerate(assets):
         if cancel(): raise Cancelled()
         if not asset.files:
@@ -321,7 +323,7 @@ def media_folders(assets, cancel=lambda: False):
             if name.upper() in reserved: name = '_' + name
             folder, number = name, 2
             while folder.casefold() in used:
-                folder = f'{name}_{number}'
+                folder = fmt('{value0}_{value1}', value0=name, value1=number)
                 number += 1
             used.add(folder.casefold())
             folders[representative] = folder
@@ -329,20 +331,20 @@ def media_folders(assets, cancel=lambda: False):
     return result
 
 
-def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
+def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None, *, language='zh-CN'):
     from gizmo import check_sources, finish_bundle, reference_edits
     from package_readme import render_package_readme
     from delivery import absolute_plugin_names, apply_edits, media_reference_name, path_word, project_settings
     from font_scan import font_destinations
     if plan.plugin_blockers:
-        raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
+        raise DependencyError(msg('package.unresolved') + join_messages('\n', plan.plugin_blockers))
     check_sources(plan, cancel)
     output = Path(output).resolve(); output.mkdir(parents=True, exist_ok=True)
     tag = hashlib.sha256(str(plan.script).encode()).hexdigest()[:10]
     name = re.sub(r'[^\w.-]', '_', plan.script.stem).lower()+'_'+tag
     target = output/name
     try: target.mkdir()
-    except FileExistsError: raise FileExistsError(f'输出已存在，请选择新目录或移走：{target}')
+    except FileExistsError: raise FileExistsError(msg('package.output_exists', path=target))
     # Windows may deny renaming a large directory even after all copies succeeded.
     # Reserve the final name immediately; the marker guards unfinished packages.
     stage = target
@@ -353,7 +355,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     total = 0; done = 0
     try:
         marker = stage/'packaging_incomplete.txt'
-        marker.write_text('打包尚未完成，请勿交付此目录。\n',encoding='utf-8')
+        marker.write_text(msg('package.incomplete'), encoding='utf-8')
         (stage / 'fonts').mkdir()
         files = list(plan.media_files(cancel))
         total = len(files)
@@ -363,7 +365,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             for source_file in files:
                 if cancel(): raise Cancelled()
                 total_bytes += source_file.stat().st_size
-            byte_progress(0, total_bytes, '准备复制')
+            byte_progress(0, total_bytes, msg('phase.prepare_copy'))
         folders = media_folders(plan.assets, cancel)
         font_paths = font_destinations(plan.assets)
         for a, folder in zip(plan.assets, folders):
@@ -392,14 +394,14 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                     # Preserve timestamps without copying Windows read-only flags.
                     metadata = p.stat()
                     if (before.st_size, before.st_mtime_ns) != (metadata.st_size, metadata.st_mtime_ns):
-                        raise DependencyError(f'复制过程中素材发生变化，请重新扫描：{p}')
+                        raise DependencyError(msg('package.source_changed', path=p))
                     os.utime(destination,(metadata.st_atime,metadata.st_mtime))
                     hashes[destination.relative_to(stage).as_posix()] = digest.hexdigest()
                     succeeded = True
                 finally:
                     if not succeeded: destination.unlink(missing_ok=True)
                 copied.add(p); done += 1; progress(done,total,p.name)
-            rel = font_paths.get(Path(a.source), f'media/{folder}/{media_reference_name(Path(a.source).name)}')
+            rel = font_paths.get(Path(a.source), fmt('media/{value0}/{value1}', value0=folder, value1=media_reference_name(Path(a.source).name)))
             new, absolute = path_word(rel, relative=True), path_word(stage / rel)
             if a.font_mode == 'family':
                 new = absolute = Path(rel).name
@@ -419,17 +421,19 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         shutil.copyfile(plan.script, stage/original_name)
         hashes[original_name] = plan.documents[str(plan.script)][2]
         plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress, absolute_edits=absolute_edits, aliases=aliases)
-        report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all(a.status=='就绪' for a in plan.assets),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
+        report = {'source_script':str(plan.script),'copied_files':done,'explicit_media_complete':all((status_code(a.status) == 'ready' for a in plan.assets)),'dependency_validation':'static_only_runtime_not_verified','warnings':plan.warnings,'assets':rows, **plugin_report}
         report['original_path_script'] = original_name
         report['relinked_script'] = absolute_name
         report['relative_script'] = relative_name
         report['font_warnings'] = ([
-            'Nuke 15.1v5 的 Text2 字体查找在含中文等非 ASCII 字符的路径下可能失败；请使用英文交付路径和字体文件名。',
-            '在 Nuke 中另存工程后，Text2 字体目录会保存为当前绝对路径；再次移动交付前请重新打包或重新设置工程字体目录。',
+            msg('font.non_ascii_warning'),
+            msg('font.resave_warning'),
         ] if fonts else [])
         report['generator'] = {'name': APP_NAME, 'version': VERSION}
+        from i18n import normalize_language
+        report['language'] = normalize_language(language)
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-        (stage/'readme.md').write_text(render_package_readme(report), encoding='utf-8')
+        (stage/'readme.md').write_text(render_package_readme(report, language), encoding='utf-8')
         if cancel(): raise Cancelled()
         marker.unlink()
         return target
@@ -439,5 +443,5 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             func(path)
         try: shutil.rmtree(stage,onerror=remove_readonly)
         except OSError as cleanup_error:
-            raise RuntimeError(f'{type(error).__name__}: {error}；未完成目录清理失败，请手动检查 {stage}：{cleanup_error}') from error
+            raise RuntimeError(msg('package.cleanup_failed', kind=type(error).__name__, error=error_message(error), path=stage, cleanup_error=error_message(cleanup_error))) from error
         raise

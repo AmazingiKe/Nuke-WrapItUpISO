@@ -1,4 +1,5 @@
 """Conservative Tcl command inspection; never evaluates source expressions."""
+from i18n import message as msg, fmt, join_messages, error_message
 import re
 
 
@@ -24,16 +25,16 @@ def inspect_commands(text):
         line = source.count('\n', 0, position) + 1
         name = command.removeprefix('::')
         if name in {'python', 'source', 'load', 'load_plugin'}:
-            kind = '脚本执行命令' if name == 'python' else '外部脚本加载命令'
-            blockers.append(f'第 {line} 行含{kind} {name}，需核对外部依赖')
+            kind = msg('script.execution_command') if name == 'python' else msg('script.loading_command')
+            blockers.append(msg('script.external_command', line=line, kind=kind, name=name))
         elif name.lower().endswith('.gizmo'):
-            reviews.append(f'第 {line} 行直接引用外部 Gizmo 路径 {command}，尚未收集，需核对接收方路径')
+            reviews.append(msg('script.explicit_gizmo', line=line, path=command))
         elif name not in allowed:
-            reviews.append(f'第 {line} 行含 Tcl 命令 {command or "动态命令"}，执行及依赖未经验证')
+            reviews.append(msg('script.tcl_command', line=line, command=command or msg('script.dynamic_command')))
 
     def walk(index=0, depth=0):
         if depth > 100:
-            reviews.append('Tcl 命令嵌套过深，脚本依赖未经验证')
+            reviews.append(msg('script.depth'))
             return len(source)
         command = None
         quoted = False

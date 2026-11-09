@@ -1,4 +1,5 @@
 """In-memory scan reuse with conservative dependency invalidation."""
+from i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 
@@ -75,7 +76,7 @@ class ScanSession:
         previous = self.plans.get(path)
         roots = tuple(str(p) for p in default_paths())
         if reuse and previous and previous.snapshot and previous.cache_roots == roots:
-            progress(0, 0, '检查扫描结果是否变化')
+            progress(0, 0, msg('phase.check_cache'))
             if previous.snapshot.valid(cancel) and (
                     previous.plugin_snapshot is None or previous.plugin_snapshot.valid(cancel)):
                 return previous
@@ -92,5 +93,5 @@ class ScanSession:
             # Read errors remain visible in the plan, but are never cached.
             if not plan.snapshot.reusable or (plan.plugin_snapshot and not plan.plugin_snapshot.reusable):
                 return plan
-            progress(0, 0, '扫描期间文件变化，重新检查')
-        raise core.DependencyError('扫描期间文件持续变化，请等文件写入完成后重试')
+            progress(0, 0, msg('phase.rescan'))
+        raise core.DependencyError(msg('scan.continuous_changes'))

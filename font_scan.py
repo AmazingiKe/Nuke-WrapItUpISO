@@ -1,4 +1,5 @@
 """Collect font files without importing Nuke or evaluating project expressions."""
+from i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 import re
@@ -35,7 +36,7 @@ def search_folders(plan, cancel):
                     try:
                         folders.append(resolve(raw.strip(), plan.base).resolve())
                     except ValueError as error:
-                        errors.append('字体搜索路径：' + str(error))
+                        errors.append(msg('font.search_path_error') + error_message(error))
     folders.append(Path.home() / '.nuke' / 'fonts')
     plugin_folders = plan.search_paths
     if not plugin_folders:
@@ -51,15 +52,14 @@ def search_folders(plan, cancel):
             try:
                 folders.append(resolve(raw.strip('"'), plan.base).resolve())
             except ValueError as error:
-                errors.append('NUKE_FONT_PATH：' + str(error))
+                errors.append('NUKE_FONT_PATH：' + error_message(error))
     # A saved script identifies its Nuke version; no installed Nuke is required.
     header = re.search(r'^#!\s+(.+?)[/\\]nuke-[\d.]+\.(?:dll|so|dylib)', plan.text, re.M | re.I)
     if header:
         folders.append(Path(header[1]) / 'plugins' / 'fonts')
     version = re.search(r'^version\s+(\d+\.\d+)\s+v(\d+)', plan.text, re.M)
     if version and os.name == 'nt':
-        folders.append(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) /
-                       f'Nuke{version[1]}v{version[2]}' / 'plugins' / 'fonts')
+        folders.append(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / fmt('Nuke{value0}v{value1}', value0=version[1], value1=version[2]) / 'plugins' / 'fonts')
     folders.append(plan.script.parent / 'fonts')
     if system_fonts:
         if os.name == 'nt':
@@ -99,9 +99,7 @@ def collect_fonts(plan, cancel, media_index):
             matches = list(FONT_RECORD.finditer(raw))
             if not matches:
                 start, end = (token.start, token.end) if token else (pos + len(body),) * 2
-                plan.assets.append(Asset(name, 'font', raw, start, end, status='待处理',
-                                         note='字体格式无法静态解析，请核对', owner=owner,
-                                         node_class=cls, node_path='_'.join((*groups, name)), kind='font'))
+                plan.assets.append(Asset(name, 'font', raw, start, end, status=msg('status.pending'), note=msg('font.parse_error'), owner=owner, node_class=cls, node_path='_'.join((*groups, name)), kind='font'))
             for match in matches:
                 filename = match['file'].strip()
                 start = token.start + match.start('file') if token else pos + len(body)
@@ -125,13 +123,13 @@ def collect_fonts(plan, cancel, media_index):
                         if files:
                             asset.source, asset.files = str(candidate), files
                             break
-                    asset.status = '就绪' if asset.files else ('待处理' if errors else '缺失')
-                    asset.note = '；'.join(errors) if errors else '按工程、插件、NUKE_FONT_PATH、Nuke 和系统字体目录查找'
+                    asset.status = msg('status.ready') if asset.files else (msg('status.pending') if errors else msg('status.missing'))
+                    asset.note = join_messages(msg('common.note_separator'), errors) if errors else msg('font.search_note')
                     if plan.snapshot:
                         for file in asset.files:
                             plan.snapshot.watch(file)
                 except (ValueError, OSError) as error:
-                    asset.status, asset.note = '待处理', str(error)
+                    asset.status, asset.note = msg('status.pending'), error_message(error)
 
 
 def font_destinations(assets):

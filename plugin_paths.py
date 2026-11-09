@@ -1,4 +1,5 @@
 """Read common startup path declarations without importing or executing scripts."""
+from i18n import message as msg, fmt, join_messages, error_message
 import ast
 from dataclasses import dataclass, field
 import os
@@ -46,7 +47,7 @@ class StartupReader:
             if self.cancel(): raise Cancelled()
             if self.observe: self.observe(Path(current))
             entries += len(directories) + len(files) + 1
-            if entries > 20000: raise Unknown('递归目录项超过静态枚举限制')
+            if entries > 20000: raise Unknown(msg('config.recursive_limit'))
             rows.append((current, directories, files))
         return rows
 
@@ -59,26 +60,26 @@ class StartupReader:
         elif isinstance(target, (ast.Tuple, ast.List)):
             if not isinstance(value, (tuple, list)) or len(target.elts) != len(value):
                 for child in target.elts: self.assign(child, None)
-                raise Unknown('解包赋值无法静态确定')
+                raise Unknown(msg('config.unpack'))
             for child, item in zip(target.elts, value): self.assign(child, item)
         else:
-            raise Unknown('不支持的赋值目标')
+            raise Unknown(msg('config.assignment'))
 
     def call_function(self, call, depth):
         function = self.functions[call.func.id]
         parameters = function.args
         if (function.decorator_list or parameters.vararg or parameters.kwarg
                 or parameters.kwonlyargs or parameters.posonlyargs or parameters.defaults):
-            raise Unknown('辅助函数参数或装饰器无法静态确定')
+            raise Unknown(msg('config.function_signature'))
         names = [arg.arg for arg in parameters.args]
         arguments = [self.value(arg) for arg in call.args]
-        if len(arguments) > len(names): raise Unknown('辅助函数参数过多')
+        if len(arguments) > len(names): raise Unknown(msg('config.too_many_arguments'))
         bound = dict(zip(names, arguments))
         for keyword in call.keywords:
             if keyword.arg not in names or keyword.arg in bound:
-                raise Unknown('辅助函数参数无法匹配')
+                raise Unknown(msg('config.arguments_mismatch'))
             bound[keyword.arg] = self.value(keyword.value)
-        if len(bound) != len(names): raise Unknown('辅助函数缺少参数')
+        if len(bound) != len(names): raise Unknown(msg('config.missing_arguments'))
         previous = self.values, self.aliases, self.functions
         self.values, self.aliases, self.functions = (mapping.copy() for mapping in previous)
         try:
@@ -101,7 +102,7 @@ class StartupReader:
         return isinstance(node, ast.Call) and self.name(node.func) in ('nuke.pluginAddPath', 'nuke.pluginAppendPath')
 
     def report(self, node, reason):
-        self.result.errors.append(f'插件路径需核对：{self.source}:{node.lineno} · {reason}')
+        self.result.errors.append(msg('config.path_review', source=self.source, line=node.lineno, reason=reason))
 
     def value(self, node):
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, bool, int, type(None))):
@@ -135,7 +136,7 @@ class StartupReader:
                 elif isinstance(op, ast.NotEq): result = left != right
                 elif isinstance(op, ast.In): result = left in right
                 elif isinstance(op, ast.NotIn): result = left not in right
-                else: raise Unknown('不支持的条件比较')
+                else: raise Unknown(msg('config.comparison'))
                 if not result: return False
                 left = right
             return True
@@ -151,7 +152,7 @@ class StartupReader:
             key = self.value(node.slice)
             if isinstance(key, str) and key in os.environ:
                 return os.environ[key]
-            raise Unknown('环境变量未设置')
+            raise Unknown(msg('config.env_unset'))
         if isinstance(node, ast.Call):
             name = self.name(node.func)
             args = [self.value(arg) for arg in node.args]
@@ -163,14 +164,14 @@ class StartupReader:
                 return self.walk_directories(Path(args[0]))
             if name == 'sorted' and len(args) == 1 and isinstance(args[0], list):
                 if any(k.arg not in {'key', 'reverse'} for k in node.keywords):
-                    raise Unknown('不支持的排序参数')
+                    raise Unknown(msg('config.sort_arguments'))
                 keywords = {k.arg: k.value for k in node.keywords}
                 reverse = self.value(keywords['reverse']) if 'reverse' in keywords else False
                 key = keywords.get('key')
                 if key is None: return sorted(args[0], reverse=bool(reverse))
                 if (not isinstance(key, ast.Lambda) or len(key.args.args) != 1 or key.args.posonlyargs
                         or key.args.kwonlyargs or key.args.vararg or key.args.kwarg or key.args.defaults):
-                    raise Unknown('排序键不是可静态解析的单参数表达式')
+                    raise Unknown(msg('config.sort_key'))
                 def sort_key(item):
                     previous = self.values.copy()
                     try:
@@ -202,7 +203,7 @@ class StartupReader:
                                 for entry in entries:
                                     if self.cancel(): raise Cancelled()
                                     items.append(Path(entry.path))
-                                    if len(items) > 4096: raise Unknown('目录项超过静态枚举限制')
+                                    if len(items) > 4096: raise Unknown(msg('config.entries_limit'))
                             return items
                     if method == 'joinpath' and not node.keywords and all(isinstance(a, (str, Path)) for a in args):
                         return owner.joinpath(*args)
@@ -219,11 +220,11 @@ class StartupReader:
                     if method in {'startswith', 'endswith'} and len(args) == 1 and isinstance(args[0], str):
                         return getattr(owner, method)(args[0])
             if node.keywords:
-                raise Unknown('不支持的调用参数')
+                raise Unknown(msg('config.call_arguments'))
             if name in ('os.getenv', 'os.environ.get') and 1 <= len(args) <= 2 and isinstance(args[0], str):
                 value = os.environ.get(*args)
                 if value is None:
-                    raise Unknown('环境变量未设置')
+                    raise Unknown(msg('config.env_unset'))
                 return value
             if all(isinstance(arg, str) for arg in args):
                 if name == 'os.path.join' and args:
@@ -236,13 +237,13 @@ class StartupReader:
                         return functions[name](args[0])
                     if name in ('os.path.abspath', 'os.path.realpath'):
                         return str((self.source.parent / args[0]).resolve())
-        raise Unknown('动态表达式无法静态确定')
+        raise Unknown(msg('config.dynamic'))
 
     def pending(self, node, visited=None):
         visited = set() if visited is None else visited
         for child in ast.walk(node):
             if self.path_call(child):
-                self.report(child, '条件、循环或函数调用无法静态确定')
+                self.report(child, msg('config.control_flow'))
             elif (isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
                   and child.func.id in self.functions and child.func.id not in visited):
                 visited.add(child.func.id)
@@ -251,19 +252,19 @@ class StartupReader:
     def statements(self, statements, depth=0):
         from core import Cancelled
         if depth > 32:
-            raise Unknown('启动配置嵌套过深')
+            raise Unknown(msg('config.depth'))
         for node in statements:
             if self.cancel():
                 raise Cancelled()
             self.steps += 1
             if self.steps > 10000:
-                raise Unknown('启动配置超过静态解析步数限制')
+                raise Unknown(msg('config.steps'))
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     self.aliases[alias.asname or alias.name.split('.')[0]] = alias.name if alias.asname else alias.name.split('.')[0]
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
-                    self.aliases[alias.asname or alias.name] = f'{node.module}.{alias.name}'
+                    self.aliases[alias.asname or alias.name] = fmt('{value0}.{value1}', value0=node.module, value1=alias.name)
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 try:
@@ -282,21 +283,21 @@ class StartupReader:
                 try:
                     self.call_function(node.value, depth)
                 except (Unknown, ValueError, TypeError, OSError) as error:
-                    self.report(node, str(error))
+                    self.report(node, error_message(error))
             elif isinstance(node, ast.Expr) and self.path_call(node.value):
                 call = node.value
                 try:
                     argument = call.args[0] if call.args else next(k.value for k in call.keywords if k.arg == 'path')
                     path = self.value(argument)
                     if not isinstance(path, str) or not path.strip():
-                        raise Unknown('路径为空或不是字符串')
+                        raise Unknown(msg('config.path_type'))
                     path = os.path.expandvars(os.path.expanduser(path))
                     if re.search(r'\$\w+|\$\{[^}]+\}|%[^%]+%', path):
-                        raise Unknown('路径中的环境变量未设置')
+                        raise Unknown(msg('config.path_env'))
                     self.add((self.source.parent / path).resolve(),
                              front=self.name(call.func) == 'nuke.pluginAddPath')
                 except (Unknown, ValueError, OSError, StopIteration) as error:
-                    self.report(node, str(error) or '缺少路径参数')
+                    self.report(node, error_message(error) or msg('config.path_argument'))
             elif isinstance(node, ast.If):
                 try:
                     condition = self.value(node.test)
@@ -305,14 +306,14 @@ class StartupReader:
                     # Do not reuse assignments that may have changed in either branch.
                     self.invalidate(node)
                     if any(isinstance(child, (ast.Break, ast.Continue, ast.Return, ast.Raise)) for child in ast.walk(node)):
-                        raise Unknown('条件分支的流程控制无法确定')
+                        raise Unknown(msg('config.branch_flow'))
                 else:
                     self.statements(node.body if condition else node.orelse, depth + 1)
             elif isinstance(node, ast.For) and isinstance(node.target, (ast.Name, ast.Tuple, ast.List)):
                 try:
                     values = self.value(node.iter)
                     if not isinstance(values, list) or len(values) > 20000:
-                        raise Unknown('循环不是有限路径或常量列表')
+                        raise Unknown(msg('config.loop_items'))
                     for value in values:
                         self.assign(node.target, value)
                         try: self.statements(node.body, depth + 1)
@@ -328,7 +329,7 @@ class StartupReader:
             elif isinstance(node, ast.Break):
                 raise LoopBreak()
             elif isinstance(node, (ast.Return, ast.Raise)):
-                raise Unknown('启动配置包含无法静态执行的流程控制')
+                raise Unknown(msg('config.unsupported_flow'))
             else:
                 self.pending(node)
                 self.invalidate(node)
@@ -351,7 +352,7 @@ def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, 
         if path in seen:
             return None
         if len(seen) >= 512:
-            raise Unknown('自动发现目录超过 512 个')
+            raise Unknown(msg('config.folder_limit'))
         seen.add(path)
         if before is not None:
             result.paths.insert(result.paths.index(before), path)
@@ -368,25 +369,25 @@ def discover_paths(roots, cancel=lambda: False, progress=lambda a,b,c: None, *, 
         if directory in processed: return
         processed.add(directory)
         if depth >= 128:
-            result.errors.append(f'插件启动目录嵌套过深：{directory}')
+            result.errors.append(msg('config.folder_depth', path=directory))
             return
         source = directory / 'init.py'
         if observe: observe(source, content=True)
         if not source.is_file():
             return
-        progress(0, 0, f'读取插件配置：{directory.name}')
+        progress(0, 0, msg('phase.read_config', name=directory.name))
         added = []
         def add(path, front=False):
             path = register(path, before=directory if front else None)
             if path is not None: added.append(path)
         try:
             if source.stat().st_size > 1024 * 1024:
-                raise Unknown('配置文件超过 1 MiB')
+                raise Unknown(msg('config.size_limit'))
             with tokenize.open(source) as stream:
                 tree = ast.parse(stream.read(), filename=str(source))
             StartupReader(source, result, add, cancel, observe).statements(tree.body)
         except (OSError, SyntaxError, UnicodeError, ValueError, TypeError, RecursionError, LoopBreak, LoopContinue) as error:
-            result.errors.append(f'插件配置无法解析：{source} · {error}')
+            result.errors.append(msg('config.parse_error', source=source, error=error_message(error)))
         # Nuke executes each init completely, then visits its new paths in reverse.
         for path in reversed(added): process(path, depth + 1)
 

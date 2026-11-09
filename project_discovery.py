@@ -1,4 +1,5 @@
 """Cancellable directory discovery. No GUI calls are made from this worker."""
+from i18n import message as msg, fmt, join_messages, error_message
 import os
 from pathlib import Path
 import threading
@@ -28,7 +29,7 @@ class DiscoveryWorker(threading.Thread):
                     self.emit('discovered', batch.copy())
                     batch.clear()
         def failed(error):
-            self.emit('message', f'无法读取目录 · {error.filename}', 'error')
+            self.emit('message', msg('discovery.read_error', path=error.filename), 'error')
         try:
             for source in self.paths:
                 if self.cancelled.is_set(): break
@@ -36,7 +37,7 @@ class DiscoveryWorker(threading.Thread):
                 try:
                     if not source.is_dir():
                         if source.is_file(): add(source)
-                        else: self.emit('message', f'找不到文件 · {source.name}', 'warning')
+                        else: self.emit('message', msg('discovery.file_missing', name=source.name), 'warning')
                         continue
                     count = len(found)
                     already_visited = source in visited
@@ -56,7 +57,7 @@ class DiscoveryWorker(threading.Thread):
                             self.emit('discovered', batch.copy())
                             batch.clear()
                     if len(found) == count and not already_visited and not self.cancelled.is_set():
-                        self.emit('message', f'未找到 .nk · {source.name}', 'warning')
+                        self.emit('message', msg('discovery.no_projects', name=source.name), 'warning')
                 except OSError as error:
                     failed(error)
         finally:
