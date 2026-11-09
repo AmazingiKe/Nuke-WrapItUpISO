@@ -19,6 +19,7 @@ class Plugin:
     dependencies: list = field(default_factory=list)
     sha256: str = ''
     packed_name: str = ''
+    replacement: str = ''
 
 
 def digest_file(path, cancel=lambda: False, progress=None):
@@ -150,6 +151,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
     from wrapitupiso.engine.plugin_paths import discover_paths
     plan.warnings.append(msg('validation.scope'))
     roots = default_paths()
+    roots = list(dict.fromkeys([*roots, *(Path(value).parent for key, value in plan.replacements.items() if key[0] == 'plugin')]))
     if plan.snapshot:
         for root in roots: plan.snapshot.watch(root)
     # A missing default ~/.nuke is normal on a clean machine.
@@ -202,7 +204,8 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         plugin = Plugin(name, used_by=[owner])
         found[name] = plugin
         plan.plugins.append(plugin)
-        if re.fullmatch(r'OFX[A-Za-z_]\w*(?:\.[\w-]+)+', name):
+        plugin.replacement = plan.replacements.get(('plugin', name), '')
+        if not plugin.replacement and re.fullmatch(r'OFX[A-Za-z_]\w*(?:\.[\w-]+)+', name):
             plugin.status = msg('status.external')
             plugin.note = msg('plugin.ofx_external')
             return
@@ -213,7 +216,14 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         if not explicit and not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
             plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.unsafe_name')
             return
-        if explicit:
+        if plugin.replacement:
+            source = Path(plugin.replacement).resolve()
+            plugin.source = str(source)
+            if plan.snapshot:
+                plan.snapshot.watch(source, content=True)
+                plan.snapshot.watch(source.parent)
+            candidates = [source] if source.is_file() else []
+        elif explicit:
             if any(char in name for char in '[]$\n\r;') or not Path(name).is_absolute():
                 plugin.note = msg('gizmo.dynamic_reference')
                 return
@@ -269,7 +279,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
             plugin.status, plugin.note = msg('status.needs_review'), msg('gizmo.depth')
             return
         try:
-            nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot, media_index=media_index)
+            nested = _scan_media(source, cancel, base_override=plan.base, snapshot=plan.snapshot, media_index=media_index, replacements=plan.replacements)
             validate_definition(nested.text)
             plugin.sha256 = hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest()
             plan.documents[str(source)] = (nested.text, nested.encoding, plugin.sha256)
@@ -307,7 +317,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         plugin.packed_name = alias
     # Rescan with the file controls declared by the collected Gizmo definitions.
     # This includes overrides saved on each instance, not only template defaults.
-    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot, media_index=media_index)
+    rescanned = _scan_media(plan.script, cancel, extra_path_knobs=custom_knobs, snapshot=plan.snapshot, media_index=media_index, replacements=plan.replacements)
     if hashlib.sha256(rescanned.text.encode(rescanned.encoding)).hexdigest() != plan.documents[str(plan.script)][2]:
         plan.plugin_errors.append(msg('scan.project_changed'))
     plan.assets = rescanned.assets
@@ -320,7 +330,7 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         scanned_sources.add(plugin.source)
         mapping = dict(custom_knobs)
         try:
-            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot, media_index=media_index)
+            nested = _scan_media(plugin.source, cancel, base_override=plan.base, extra_path_knobs=mapping, snapshot=plan.snapshot, media_index=media_index, replacements=plan.replacements)
             if hashlib.sha256(nested.text.encode(nested.encoding)).hexdigest() != plugin.sha256:
                 raise ValueError(msg('scan.plugin_changed'))
             for asset in nested.assets:
@@ -393,6 +403,8 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
                 absolute_path = folder / (aliases[plugin.name] + '.gizmo')
                 absolute_path.write_bytes(apply_edits(plan.documents[plugin.source][0], absolute_edits.get(plugin.source, [])).encode(encoding))
             records.append({'name': plugin.name, 'original_reference': plugin.name, 'packed_class': plugin.packed_name or plugin.name, 'source': plugin.source, 'source_sha256': plugin.sha256, 'packed_path': path.relative_to(stage).as_posix(), 'status': msg('status.collected'), 'absolute_packed_path': absolute_path.relative_to(stage).as_posix() if absolute_path else None, 'absolute_packed_class': aliases[plugin.name] if absolute_path else None, 'dependencies': plugin.dependencies, 'used_by': plugin.used_by, 'candidates': plugin.candidates})
+    for record, plugin in zip(records, plan.plugins):
+        if plugin.replacement: record['replacement_source'] = plugin.replacement
     check_sources(plan, cancel)
     # A single destination read both verifies the copy and supplies the report hash.
     paths = {stage / relative for relative in hashes}

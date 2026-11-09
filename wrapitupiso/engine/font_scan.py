@@ -7,7 +7,30 @@ import sys
 
 
 FONT_EXTENSIONS = {'.ttf', '.otf', '.ttc', '.otc', '.pfa', '.pfb'}
-FONT_RECORD = re.compile(r'([^{}:]+?)\s*:\s*([^{}:]+?)\s*:\s*(?P<file>[^{}]+?)\s*:\s*\d+(?=\s*[}]|\s*$)')
+FONT_RECORD = re.compile(r'([^{}:]+?)\s*:\s*([^{}:]+?)\s*:\s*(?P<file>[^{}]+?)\s*:\s*(?P<index>\d+)(?=\s*[}]|\s*$)')
+
+
+def font_identity(path):
+    """Read the selected face's family/style without installing the font."""
+    try:
+        if path.suffix.lower() in {'.pfa', '.pfb'}:
+            from fontTools.t1Lib import T1Font
+            info = T1Font(str(path))['FontInfo']
+            family = info['FamilyName']
+            full = info.get('FullName', family)
+            style = full[len(family):].strip() if full.startswith(family) else info.get('Weight', 'Regular')
+            style = style or 'Regular'
+        else:
+            from fontTools.ttLib import TTFont
+            with path.open('rb') as stream, TTFont(stream, fontNumber=0, lazy=True) as font:
+                names = font['name']
+                family = names.getBestFamilyName()
+                style = names.getBestSubFamilyName()
+        if not family or not style or any(c in family + style for c in '{}:\\\n\r'):
+            raise ValueError(msg('font.parse_error'))
+        return family, style
+    except Exception as error:
+        raise ValueError(msg('font.parse_error')) from error
 
 
 def font_files(source, media_index):
@@ -75,6 +98,7 @@ def search_folders(plan, cancel):
 
 def collect_fonts(plan, cancel, media_index):
     from wrapitupiso.engine.core import Asset, Cancelled, Token, knobs, node_blocks, resolve
+    from wrapitupiso.engine.relink import dependency_key
     documents = []
     for owner, (text, _, _) in plan.documents.items():
         nodes = []
@@ -99,7 +123,22 @@ def collect_fonts(plan, cancel, media_index):
             matches = list(FONT_RECORD.finditer(raw))
             if not matches:
                 start, end = (token.start, token.end) if token else (pos + len(body),) * 2
-                plan.assets.append(Asset(name, 'font', raw, start, end, status=msg('status.pending'), note=msg('font.parse_error'), owner=owner, node_class=cls, node_path='_'.join((*groups, name)), kind='font'))
+                asset = Asset(name, 'font', raw, start, end, status=msg('status.pending'), note=msg('font.parse_error'), owner=owner, node_class=cls, node_path='_'.join((*groups, name)), kind='font')
+                plan.assets.append(asset)
+                asset.replacement = plan.replacements.get(dependency_key(asset), '')
+                if asset.replacement:
+                    asset.font_mode = 'record'
+                    asset.source = str(Path(asset.replacement).resolve())
+                    try:
+                        asset.font_family, asset.font_style = font_identity(Path(asset.source))
+                        asset.files = font_files(Path(asset.source), media_index)
+                        asset.status = msg('status.ready') if asset.files else msg('status.missing')
+                        asset.note = ''
+                    except (OSError, ValueError) as error:
+                        asset.note = error_message(error)
+                    if plan.snapshot:
+                        plan.snapshot.watch(Path(asset.source).parent)
+                        for file in asset.files: plan.snapshot.watch(file)
             for match in matches:
                 filename = match['file'].strip()
                 start = token.start + match.start('file') if token else pos + len(body)
@@ -112,8 +151,9 @@ def collect_fonts(plan, cancel, media_index):
                     # Family-record filenames use font search paths independently
                     # of a dynamic project media directory.
                     is_path = Path(filename).is_absolute() or '/' in filename or '\\' in filename
-                    source = resolve(filename, plan.base if is_path else plan.script.parent).resolve()
-                    candidates = [source] if is_path else [folder / filename for folder in folders]
+                    asset.replacement = plan.replacements.get(dependency_key(asset), '')
+                    source = Path(asset.replacement).resolve() if asset.replacement else resolve(filename, plan.base if is_path else plan.script.parent).resolve()
+                    candidates = [source] if is_path or asset.replacement else [folder / filename for folder in folders]
                     for candidate in candidates:
                         if cancel():
                             raise Cancelled()
@@ -125,11 +165,17 @@ def collect_fonts(plan, cancel, media_index):
                             break
                     asset.status = msg('status.ready') if asset.files else (msg('status.pending') if errors else msg('status.missing'))
                     asset.note = join_messages(msg('common.note_separator'), errors) if errors else msg('font.search_note')
+                    if asset.replacement and asset.files:
+                        asset.font_family, asset.font_style = font_identity(Path(asset.source))
+                        if token:
+                            asset.font_edits = [(token.start + match.start(group), token.start + match.end(group), value)
+                                                for group, value in ((1, ' ' + asset.font_family), (2, asset.font_style), ('index', '0'))]
                     if plan.snapshot:
                         for file in asset.files:
                             plan.snapshot.watch(file)
                 except (ValueError, OSError) as error:
                     asset.status, asset.note = msg('status.pending'), error_message(error)
+                    if asset.replacement: asset.files = []
 
 
 def font_destinations(assets):

@@ -1593,5 +1593,25 @@
     "zh-CN": "；",
     "en": "; ",
     "ja": "、"
+  },
+  "relink.plugin_type": {
+    "zh-CN": "请选择 Gizmo 或二进制插件文件。",
+    "en": "Choose a Gizmo or binary plugin file.",
+    "ja": "Gizmo またはバイナリプラグインを選択してください。"
+  },
+  "relink.font_type": {
+    "zh-CN": "请选择字体文件。",
+    "en": "Choose a font file.",
+    "ja": "フォントファイルを選択してください。"
+  },
+  "relink.sequence_frame": {
+    "zh-CN": "此项是序列帧，请选择带帧号的文件或输入序列路径。",
+    "en": "This is a sequence. Select a numbered frame or enter a sequence path.",
+    "ja": "この項目は連番です。番号付きフレームまたは連番パスを指定してください。"
+  },
+  "relink.stale": {
+    "zh-CN": "工程内容已变化，{count} 项旧路径选择未应用，请重新核对。",
+    "en": "The project changed; {count} previous path choices no longer apply. Review them again.",
+    "ja": "プロジェクトが変更され、以前のパス選択 {count} 件は適用されませんでした。再確認してください。"
   }
 }

@@ -1,1 +1,2 @@
 PySide6>=6.10,<7
+fonttools>=4.61,<5

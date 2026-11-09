@@ -143,6 +143,10 @@ class Asset:
     node_path: str = ''
     kind: str = 'media'
     font_mode: str = ''
+    replacement: str = ''
+    font_family: str = ''
+    font_style: str = ''
+    font_edits: list = field(default_factory=list)
 
 @dataclass
 class Plan:
@@ -162,6 +166,7 @@ class Plan:
     snapshot: object = None
     plugin_snapshot: object = None
     cache_roots: tuple = ()
+    replacements: dict = field(default_factory=dict)
     @property
     def size(self):
         return self.measure()[1]
@@ -218,9 +223,10 @@ def resolve(raw, base):
         raise ValueError(msg('parse.project_directory'))
     return p if p.is_absolute() else base / p
 
-def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None):
+def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base_override=..., extra_path_knobs=None, snapshot=None, media_index=None, replacements=None):
     from wrapitupiso.engine.media_scan import MediaIndex
     from wrapitupiso.engine.font_scan import FONT_EXTENSIONS, font_files
+    from wrapitupiso.engine.relink import dependency_key
     media_index = media_index or MediaIndex(cancel, snapshot)
     path = Path(path).resolve()
     if snapshot: snapshot.watch(path, content=True)
@@ -250,7 +256,9 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
             a = Asset(name,key,t.value,t.start,t.end,owner=str(path),node_class=cls,
                       node_path='_'.join((*groups, name)), kind='font' if key in {'font', 'font_file'} else 'media'); assets.append(a)
             try:
-                source = resolve(t.value, base).resolve(); a.source = str(source)
+                a.replacement = (replacements or {}).get(dependency_key(a), '')
+                source = Path(a.replacement).resolve() if a.replacement else resolve(t.value, base).resolve()
+                a.source = str(source)
                 if key in {'font', 'font_file'} or source.suffix.lower() in FONT_EXTENSIONS:
                     a.kind = 'font'
                 if snapshot:
@@ -277,18 +285,22 @@ def _scan_media(path, cancel=lambda: False, progress=lambda a,b,c: None, *, base
     return Plan(path,text,enc,assets,list(dict.fromkeys(warnings)),base=base)
 
 
-def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None):
+def scan(path, cancel=lambda: False, progress=lambda a,b,c: None, *, automatic_plugins=False, context=None, replacements=None):
     from wrapitupiso.engine.font_scan import collect_fonts
     from wrapitupiso.engine.gizmo import scan_dependencies
     from wrapitupiso.engine.scan_cache import Snapshot
     from wrapitupiso.engine.media_scan import MediaIndex
     snapshot = Snapshot(cancel) if context else None
     media_index = MediaIndex(cancel, snapshot)
-    plan = _scan_media(path, cancel, progress, snapshot=snapshot, media_index=media_index)
+    plan = _scan_media(path, cancel, progress, snapshot=snapshot, media_index=media_index, replacements=replacements)
+    plan.replacements = dict(replacements or {})
     plan.snapshot = snapshot
     plan.automatic_plugins = automatic_plugins
     scan_dependencies(plan, cancel, progress, context=context, media_index=media_index)
     collect_fonts(plan, cancel, media_index)
+    from wrapitupiso.engine.relink import dependency_key
+    unused = plan.replacements.keys() - {dependency_key(item) for item in [*plan.assets, *plan.plugins]}
+    if unused: plan.warnings.append(msg('relink.stale', count=len(unused)))
     return plan
 
 def media_folders(assets, cancel=lambda: False):
@@ -371,6 +383,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         for a, folder in zip(plan.assets, folders):
             if cancel(): raise Cancelled()
             row = {'node':a.node,'knob':a.knob,'original':a.raw,'status':a.status,'note':a.note,'missing_frames':a.missing,'files':len(a.files),'document':a.owner,'kind':a.kind}
+            if a.replacement: row['replacement_source'] = a.replacement
             rows.append(row)
             if not a.files: continue
             for p in a.files:
@@ -405,11 +418,15 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             new, absolute = path_word(rel, relative=True), path_word(stage / rel)
             if a.font_mode == 'family':
                 new = absolute = Path(rel).name
+            elif a.font_mode == 'record':
+                new = absolute = '{{ ' + a.font_family + ' : ' + a.font_style + ' : ' + Path(rel).name + ' : 0 }}'
             elif a.font_mode == 'default':
-                new = absolute = '\n font {{ Utopia : Regular : ' + Path(rel).name + ' : 0 }}\n'
+                new = absolute = '\n font {{ ' + (a.font_family or 'Utopia') + ' : ' + (a.font_style or 'Regular') + ' : ' + Path(rel).name + ' : 0 }}\n'
             owner = a.owner or str(plan.script)
             edits.setdefault(owner, []).append((a.start, a.end, new))
             absolute_edits.setdefault(owner, []).append((a.start, a.end, absolute))
+            edits[owner].extend(a.font_edits)
+            absolute_edits[owner].extend(a.font_edits)
             row['packed_path'] = rel
         fonts = any(a.font_mode and a.files for a in plan.assets)
         relative_name = plan.script.stem.lower() + '_relinked_relative' + plan.script.suffix.lower()

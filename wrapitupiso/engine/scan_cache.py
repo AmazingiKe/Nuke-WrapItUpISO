@@ -69,13 +69,13 @@ class ScanSession:
         self.index_entry = (key, snapshot, result)
         return (*result, snapshot)
 
-    def scan(self, path, cancel=lambda: False, progress=lambda a,b,c: None, *, reuse=False, scanner=None):
+    def scan(self, path, cancel=lambda: False, progress=lambda a,b,c: None, *, reuse=False, scanner=None, replacements=None):
         from wrapitupiso.engine import core
         from wrapitupiso.engine.gizmo import default_paths
         path = Path(path).resolve()
         previous = self.plans.get(path)
         roots = tuple(str(p) for p in default_paths())
-        if reuse and previous and previous.snapshot and previous.cache_roots == roots:
+        if reuse and previous and previous.snapshot and previous.cache_roots == roots and previous.replacements == (replacements or {}):
             progress(0, 0, msg('phase.check_cache'))
             if previous.snapshot.valid(cancel) and (
                     previous.plugin_snapshot is None or previous.plugin_snapshot.valid(cancel)):
@@ -84,7 +84,7 @@ class ScanSession:
         for attempt in range(2):
             roots = tuple(str(p) for p in default_paths())
             plan = (scanner or core.scan)(path, cancel, progress=progress,
-                                         automatic_plugins=True, context=self)
+                                         automatic_plugins=True, context=self, replacements=replacements)
             plan.cache_roots = roots
             if (plan.snapshot.valid(cancel)
                     and (plan.plugin_snapshot is None or plan.plugin_snapshot.valid(cancel))):
