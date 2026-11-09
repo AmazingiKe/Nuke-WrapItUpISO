@@ -317,7 +317,7 @@ def media_folders(assets, cancel=lambda: False):
         representative = root(index)
         if representative not in folders:
             first = assets[representative]
-            name = re.sub(r'[^A-Za-z0-9_-]+', '_', first.node_path or first.node).strip('_')[:96] or 'Media'
+            name = re.sub(r'[^A-Za-z0-9_-]+', '_', first.node_path or first.node).strip('_')[:96].lower() or 'media'
             if name.upper() in reserved: name = '_' + name
             folder, number = name, 2
             while folder.casefold() in used:
@@ -332,14 +332,14 @@ def media_folders(assets, cancel=lambda: False):
 def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byte_progress=None, verify_progress=None):
     from gizmo import check_sources, finish_bundle, reference_edits
     from package_readme import render_package_readme
-    from delivery import absolute_plugin_names, apply_edits, path_word, project_settings
+    from delivery import absolute_plugin_names, apply_edits, media_reference_name, path_word, project_settings
     from font_scan import font_destinations
     if plan.plugin_blockers:
         raise DependencyError('插件依赖未解决，未生成交付包：\n' + '\n'.join(plan.plugin_blockers))
     check_sources(plan, cancel)
     output = Path(output).resolve(); output.mkdir(parents=True, exist_ok=True)
     tag = hashlib.sha256(str(plan.script).encode()).hexdigest()[:10]
-    name = re.sub(r'[^\w.-]', '_', plan.script.stem)+'_'+tag
+    name = re.sub(r'[^\w.-]', '_', plan.script.stem).lower()+'_'+tag
     target = output/name
     try: target.mkdir()
     except FileExistsError: raise FileExistsError(f'输出已存在，请选择新目录或移走：{target}')
@@ -352,9 +352,9 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
     copied, rows, hashes = set(), [], {}
     total = 0; done = 0
     try:
-        marker = stage/'PACKAGING_INCOMPLETE.txt'
+        marker = stage/'packaging_incomplete.txt'
         marker.write_text('打包尚未完成，请勿交付此目录。\n',encoding='utf-8')
-        (stage / 'FONTS').mkdir()
+        (stage / 'fonts').mkdir()
         files = list(plan.media_files(cancel))
         total = len(files)
         copied_bytes = 0
@@ -373,7 +373,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             if not a.files: continue
             for p in a.files:
                 if p in copied: continue
-                destination = stage / font_paths[p] if p in font_paths else stage / 'media' / folder / p.name
+                destination = stage / font_paths[p] if p in font_paths else stage / 'media' / folder / p.name.lower()
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 succeeded = False
                 try:
@@ -399,7 +399,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
                 finally:
                     if not succeeded: destination.unlink(missing_ok=True)
                 copied.add(p); done += 1; progress(done,total,p.name)
-            rel = font_paths.get(Path(a.source), f'media/{folder}/{Path(a.source).name}')
+            rel = font_paths.get(Path(a.source), f'media/{folder}/{media_reference_name(Path(a.source).name)}')
             new, absolute = path_word(rel, relative=True), path_word(stage / rel)
             if a.font_mode == 'family':
                 new = absolute = Path(rel).name
@@ -410,12 +410,12 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
             absolute_edits.setdefault(owner, []).append((a.start, a.end, absolute))
             row['packed_path'] = rel
         fonts = any(a.font_mode and a.files for a in plan.assets)
-        relative_name = plan.script.stem + '_Relinked_relative' + plan.script.suffix
-        absolute_name = plan.script.stem + '_Relinked' + plan.script.suffix
+        relative_name = plan.script.stem.lower() + '_relinked_relative' + plan.script.suffix.lower()
+        absolute_name = plan.script.stem.lower() + '_relinked' + plan.script.suffix.lower()
         for relative, name, mapping in ((True, relative_name, edits), (False, absolute_name, absolute_edits)):
             changes = mapping.get(str(plan.script), []) + project_settings(plan.text, stage, relative=relative, fonts=fonts)
             (stage / name).write_bytes(apply_edits(plan.text, changes).encode(plan.encoding))
-        original_name = plan.script.stem + '_original' + plan.script.suffix
+        original_name = plan.script.stem.lower() + '_original' + plan.script.suffix.lower()
         shutil.copyfile(plan.script, stage/original_name)
         hashes[original_name] = plan.documents[str(plan.script)][2]
         plugin_report = finish_bundle(plan, stage, edits, hashes, cancel, verify_progress, absolute_edits=absolute_edits, aliases=aliases)
@@ -429,7 +429,7 @@ def package(plan, output, cancel=lambda: False, progress=lambda a,b,c: None, byt
         ] if fonts else [])
         report['generator'] = {'name': APP_NAME, 'version': VERSION}
         (stage/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-        (stage/'README.md').write_text(render_package_readme(report), encoding='utf-8')
+        (stage/'readme.md').write_text(render_package_readme(report), encoding='utf-8')
         if cancel(): raise Cancelled()
         marker.unlink()
         return target

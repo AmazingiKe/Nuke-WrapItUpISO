@@ -289,11 +289,14 @@ def scan_dependencies(plan, cancel, progress, *, context=None, media_index=None)
         visit(name, f'{plan.script.name} / {node}')
     occupied = {p.name.casefold() for p in plan.plugins if not is_gizmo_reference(p.name)}
     for plugin in plan.plugins:
-        if not is_gizmo_reference(plugin.name) or plugin.source not in plan.documents:
+        if not is_gizmo_reference(plugin.name):
+            plugin.packed_name = plugin.name.lower()
             continue
-        stem = re.sub(r'[^A-Za-z0-9_]', '_', Path(plugin.source).stem)[:48] or 'Gizmo'
+        if plugin.source not in plan.documents:
+            continue
+        stem = re.sub(r'[^A-Za-z0-9_]', '_', Path(plugin.source).stem)[:48].lower() or 'gizmo'
         suffix = hashlib.sha256(os.path.normcase(plugin.source).encode('utf-8')).hexdigest()[:12]
-        base = f'WUI_{stem}_{suffix}'
+        base = f'wui_{stem}_{suffix}'
         alias, counter = base, 2
         while alias.casefold() in occupied:
             alias = f'{base}_{counter}'
@@ -403,7 +406,7 @@ def finish_bundle(plan, stage, edits, hashes, cancel, verify_progress=None, *, a
     paths = {stage / relative for relative in hashes}
     for path in stage.rglob('*'):
         if cancel(): raise Cancelled()
-        if path.is_file() and path.name != 'PACKAGING_INCOMPLETE.txt': paths.add(path)
+        if path.is_file() and path.name != 'packaging_incomplete.txt': paths.add(path)
     total = len(paths)
     if verify_progress: verify_progress(0, total, '开始校验')
     for done, path in enumerate(sorted(paths)):

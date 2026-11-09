@@ -42,8 +42,8 @@ class GizmoPathReferenceTests(unittest.TestCase):
         record = report['plugins'][0]
         packed = target / record['packed_path']
         self.assertIn('label exact', packed.read_text())
-        self.assertEqual(list(node_blocks((target / (self.script.stem + '_Relinked_relative.nk')).read_text()))[0][0], packed.stem)
-        self.assertNotIn(exact.as_posix(), (target / (self.script.stem + '_Relinked_relative.nk')).read_text())
+        self.assertEqual(list(node_blocks((target / (self.script.stem + '_relinked_relative.nk')).read_text()))[0][0], packed.stem)
+        self.assertNotIn(exact.as_posix(), (target / (self.script.stem + '_relinked_relative.nk')).read_text())
         self.assertEqual((target / report['original_path_script']).read_bytes(), original)
         self.assertEqual(self.script.read_bytes(), original)
         self.assertEqual(record['original_reference'], exact.as_posix())
@@ -58,9 +58,9 @@ class GizmoPathReferenceTests(unittest.TestCase):
         plan = scan(self.script, automatic_plugins=True)
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'nested')
-        self.assertNotIn(inner.as_posix(), (target / 'gizmos/Outer.gizmo').read_text())
+        self.assertNotIn(inner.as_posix(), (target / 'gizmos/outer.gizmo').read_text())
         self.assertEqual({p.read_bytes() for p in (target / 'media').rglob('*.exr')}, {b'default', b'override'})
-        self.assertIn('/media/', (target / 'gizmos/Outer.gizmo').read_text())
+        self.assertIn('/media/', (target / 'gizmos/outer.gizmo').read_text())
 
     def test_same_filename_different_sources_get_distinct_names(self):
         a = self.definition(self.root / 'a/Glow.gizmo', controls=' label a\n')
@@ -84,7 +84,7 @@ class GizmoPathReferenceTests(unittest.TestCase):
         self.assertEqual(plan.plugins[0].status, '未找到')
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'missing')
-        self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), self.script.read_bytes())
+        self.assertEqual((target / (self.script.stem + '_relinked_relative.nk')).read_bytes(), self.script.read_bytes())
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertFalse(report['gizmo_dependencies_complete'])
         self.assertEqual(report['plugins'][0]['status'], '未收集')

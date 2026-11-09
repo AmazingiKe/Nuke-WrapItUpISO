@@ -116,7 +116,7 @@ nuke.pluginAppendPath(f'{base}/{name}')
         self.assertEqual(plan.plugins[0].status, '就绪')
         self.assertIn(str(external), plan.search_paths)
         destination = package(plan, self.root / 'out')
-        self.assertTrue((destination / 'gizmos/Demo.gizmo').is_file())
+        self.assertTrue((destination / 'gizmos/demo.gizmo').is_file())
 
 
 class AutomaticPluginTests(unittest.TestCase):
@@ -149,7 +149,7 @@ class AutomaticPluginTests(unittest.TestCase):
             self.assertFalse(plan.plugin_blockers)
             self.assertTrue(any('自动选择' in note for note in plan.warnings))
             target = package(plan, folder/'out')
-            self.assertIn('first', (target/'gizmos/Demo.gizmo').read_text())
+            self.assertIn('first', (target/'gizmos/demo.gizmo').read_text())
 
     def test_nested_missing_plugin_keeps_available_parent(self):
         with tempfile.TemporaryDirectory() as root:
@@ -159,8 +159,8 @@ class AutomaticPluginTests(unittest.TestCase):
             with patch('gizmo.default_paths', return_value=[folder]):
                 plan=scan(script,automatic_plugins=True)
             target=package(plan,folder/'out')
-            self.assertTrue((target/'gizmos/Outer.gizmo').exists())
-            self.assertFalse((target/'gizmos/Missing.gizmo').exists())
+            self.assertTrue((target/'gizmos/outer.gizmo').exists())
+            self.assertFalse((target/'gizmos/missing.gizmo').exists())
 
 
 if __name__ == '__main__':

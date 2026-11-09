@@ -47,7 +47,7 @@ class CallbackTests(unittest.TestCase):
                     plan = scan(self.script, automatic_plugins=automatic)
                     self.assertFalse(plan.plugin_blockers)
                     target = package(plan, self.root / f'out_{automatic}_{quoted}')
-                    self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), original)
+                    self.assertEqual((target / (self.script.stem + '_relinked_relative.nk')).read_bytes(), original)
                     report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
                     self.assertTrue(report['gizmo_dependencies_complete'])
                     self.assertFalse(report['nuke_runtime_verified'])
@@ -60,7 +60,7 @@ class CallbackTests(unittest.TestCase):
         plan = scan(self.script, automatic_plugins=True)
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'nested')
-        self.assertEqual((target / 'gizmos/Inner.gizmo').read_text(), inner)
+        self.assertEqual((target / 'gizmos/inner.gizmo').read_text(), inner)
 
     def test_strict_mode_blocks_unverified_code_with_node_context(self):
         sentinel = self.root / 'executed'
@@ -107,13 +107,13 @@ class CallbackTests(unittest.TestCase):
         for name in ('Glow_Exponential6', 'Controls', 'help', 'seed'):
             self.assertIn(name, '\n'.join(plan.script_warnings))
         target = package(plan, self.root / 'automatic')
-        self.assertEqual((target / (self.script.stem + '_Relinked_relative.nk')).read_bytes(), original)
+        self.assertEqual((target / (self.script.stem + '_relinked_relative.nk')).read_bytes(), original)
         self.assertFalse(sentinel.exists())
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertFalse(report['script_dependencies_verified'])
         self.assertFalse(report['gizmo_dependencies_complete'])
         self.assertEqual(report['script_dependency_warnings'], plan.script_warnings)
-        self.assertIn('脚本', (target / 'README.md').read_text(encoding='utf-8'))
+        self.assertIn('脚本', (target / 'readme.md').read_text(encoding='utf-8'))
 
     def test_automatic_mode_collects_nested_gizmo_with_node_building_callback(self):
         self.script.write_text('Outer {\n}\n')
@@ -131,8 +131,8 @@ class CallbackTests(unittest.TestCase):
         self.assertTrue(all(p.status == '就绪' for p in plan.plugins))
         self.assertIn('Inner.gizmo', '\n'.join(plan.script_warnings))
         target = package(plan, self.root / 'nested_graph')
-        self.assertEqual((target / 'gizmos/Inner.gizmo').read_text(), inner)
-        self.assertTrue((target / 'gizmos/Outer.gizmo').exists())
+        self.assertEqual((target / 'gizmos/inner.gizmo').read_text(), inner)
+        self.assertTrue((target / 'gizmos/outer.gizmo').exists())
         # Script warnings must not suppress a confirmed missing internal asset.
         (self.root / 'Inner.gizmo').write_text(inner.replace('end_group', 'Read {\n file missing.exr\n}\nend_group'))
         broken = scan(self.script, automatic_plugins=True)

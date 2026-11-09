@@ -1,8 +1,13 @@
 """Render the absolute and portable project variants from the same copy plan."""
 
 # FreeType scans this knob's literal value while loading Text2, before evaluating
-# File_Knob expressions. Resolve just our generated FONTS path before those nodes.
-FONT_PATH_COMMAND = 'knob root.free_type_font_path [file join [file dirname [value root.name]] FONTS]'
+# File_Knob expressions. Resolve just our generated fonts path before those nodes.
+FONT_PATH_COMMAND = 'knob root.free_type_font_path [file join [file dirname [value root.name]] fonts]'
+
+
+def media_reference_name(name):
+    # Lowercase the filename while preserving Nuke's case-sensitive UDIM token.
+    return '<UDIM>'.join(part.lower() for part in name.split('<UDIM>'))
 
 
 def path_word(path, *, relative=False):
@@ -28,7 +33,7 @@ def project_settings(text, target, *, relative, fonts):
     from core import knobs, node_blocks
     values = {'project_directory': '"[file dirname [value root.name]]"' if relative else path_word(target)}
     if fonts:
-        values['free_type_font_path'] = path_word('FONTS', relative=True) if relative else literal_word(target / 'FONTS')
+        values['free_type_font_path'] = path_word('fonts', relative=True) if relative else literal_word(target / 'fonts')
     edits = []
     for cls, pos, body in node_blocks(text):
         if cls != 'Root':
@@ -68,7 +73,7 @@ def absolute_plugin_names(plugins):
     for plugin in plugins:
         if plugin.status != '就绪':
             continue
-        base = (plugin.packed_name or plugin.name) + '_Relinked'
+        base = (plugin.packed_name or plugin.name).lower() + '_relinked'
         name, number = base, 2
         while name.casefold() in used:
             name, number = f'{base}_{number}', number + 1

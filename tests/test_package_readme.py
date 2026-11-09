@@ -7,7 +7,7 @@ class PackageReadmeTests(unittest.TestCase):
             {'node':'Read1','original':'D:/ok.exr','status':'就绪','files':1,'packed_path':'media/ok.exr'},
             {'node':'Read2','original':'D:/seq.%04d.exr','status':'缺帧','files':2,'packed_path':'media/seq.%04d.exr','note':'SECRET_REASON'},
             {'node':'Read3','original':'D:/missing.exr','status':'缺失','files':0,'note':'SECRET_REASON'},
-        ],'plugins':[{'name':'Demo','status':'已收集','packed_path':'gizmos/Demo.gizmo'},
+        ],'plugins':[{'name':'Demo','status':'已收集','packed_path':'gizmos/demo.gizmo'},
                      {'name':'Missing','status':'未收集','packed_path':None,'note':'SECRET_REASON'}]}
         text=render_package_readme(report)
         for expected in ('Read1 | ok.exr | 成功','Read2 | seq.%04d.exr | 部分成功','Read3 | missing.exr | 未成功',

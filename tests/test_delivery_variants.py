@@ -31,7 +31,7 @@ class DeliveryVariantTests(unittest.TestCase):
         target = package(scan(self.script), self.root / 'output')
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
         self.assertEqual({p.name for p in target.glob('*.nk')}, {
-            '中文 shot_original.nk', '中文 shot_Relinked.nk', '中文 shot_Relinked_relative.nk'})
+            '中文 shot_original.nk', '中文 shot_relinked.nk', '中文 shot_relinked_relative.nk'})
         self.assertEqual((target / report['original_path_script']).read_bytes(), original)
         self.assertEqual(self.script.read_bytes(), original)
         absolute = (target / report['relinked_script']).read_bytes().decode(encoding)
@@ -50,8 +50,8 @@ class DeliveryVariantTests(unittest.TestCase):
         self.assertIn((target / path).as_posix(), absolute)
         self.assertNotIn('[file dirname', absolute)
         self.assertIn('[file dirname [value root.name]]/' + path, relative)
-        self.assertTrue((target / 'FONTS').is_dir())
-        readme = (target / 'README.md').read_text(encoding='utf-8')
+        self.assertTrue((target / 'fonts').is_dir())
+        readme = (target / 'readme.md').read_text(encoding='utf-8')
         for name in (report['original_path_script'], report['relinked_script'], report['relative_script']):
             self.assertIn(name, readme)
         self.assertIn('绝对路径', readme)
@@ -74,12 +74,12 @@ class DeliveryVariantTests(unittest.TestCase):
         self.assertEqual(report['copied_files'], 4)
         for row in rows:
             self.assertEqual(row['kind'], 'font')
-            self.assertTrue(row['packed_path'].startswith('FONTS/'))
+            self.assertTrue(row['packed_path'].startswith('fonts/'))
             self.assertIn((target / row['packed_path']).as_posix(), absolute)
             self.assertIn('[file dirname [value root.name]]/' + row['packed_path'], relative)
         self.assertEqual((target / rows[0]['packed_path']).read_bytes(), b'font A')
         self.assertEqual((target / rows[1]['packed_path']).read_bytes(), b'font B')
-        self.assertEqual(len(list((target / 'FONTS').rglob('*.afm'))), 1)
+        self.assertEqual(len(list((target / 'fonts').rglob('*.afm'))), 1)
 
     def test_text2_family_fonts_use_project_font_path_in_both_versions(self):
         self.asset('project fonts/My Font.ttf', b'font')
@@ -90,8 +90,8 @@ class DeliveryVariantTests(unittest.TestCase):
         self.assertEqual(row['status'], '就绪')
         self.assertEqual((target / row['packed_path']).read_bytes(), b'font')
         self.assertIn('My Family : Regular', relative)
-        self.assertIn('free_type_font_path "' + (target / 'FONTS').as_posix(), absolute)
-        self.assertIn('free_type_font_path "[file dirname [value root.name]]/FONTS', relative)
+        self.assertIn('free_type_font_path "' + (target / 'fonts').as_posix(), absolute)
+        self.assertIn('free_type_font_path "[file dirname [value root.name]]/fonts', relative)
 
     def test_missing_fonts_are_reported_without_replacing_the_original_reference(self):
         target, report, absolute, relative = self.collect('Text {\n font missing.ttf\n name Title\n}\n')
@@ -99,7 +99,7 @@ class DeliveryVariantTests(unittest.TestCase):
         self.assertFalse(report['explicit_media_complete'])
         self.assertIn('font missing.ttf', absolute)
         self.assertIn('font missing.ttf', relative)
-        self.assertIn('未成功', (target / 'README.md').read_text(encoding='utf-8'))
+        self.assertIn('未成功', (target / 'readme.md').read_text(encoding='utf-8'))
 
     def test_font_changes_invalidate_scan_cache(self):
         font = self.asset('fonts/font.ttf', b'first')
@@ -119,7 +119,7 @@ class DeliveryVariantTests(unittest.TestCase):
             ' font {{ First Family : Regular : a.ttf : 0 } { Second Family : Bold : b.otf : 1 }}\n}\n')
         self.assertEqual(len(report['assets']), 3)
         self.assertTrue(all(row['status'] == '就绪' for row in report['assets']))
-        self.assertIn('font {{ Utopia : Regular : UtopiaRegular.pfa : 0 }}', relative)
+        self.assertIn('font {{ Utopia : Regular : utopiaregular.pfa : 0 }}', relative)
         self.assertIn('Second Family : Bold : b.otf : 1', relative)
         self.assertLess(relative.index('knob root.free_type_font_path'), relative.index('Text2 {'))
         self.assertNotIn('knob root.free_type_font_path', absolute)
@@ -145,7 +145,7 @@ class DeliveryVariantTests(unittest.TestCase):
         self.asset('fonts/font.ttf')
         target, report, _, _ = self.collect('Text2 {\n font {{ Test : Regular : font.ttf : 0 }}\n}\n')
         self.assertIn('Nuke 15.1v5', ' '.join(report['font_warnings']))
-        self.assertIn('英文', (target / 'README.md').read_text(encoding='utf-8'))
+        self.assertIn('英文', (target / 'readme.md').read_text(encoding='utf-8'))
 
     def test_text2_finds_registered_font_directory_without_gizmo_nodes(self):
         plugin_root = self.root / 'plugins'
@@ -158,14 +158,14 @@ class DeliveryVariantTests(unittest.TestCase):
 
     def test_absolute_gizmo_alias_cannot_overwrite_an_existing_relative_class(self):
         self.asset('plugins/Demo.gizmo', b'Gizmo {\n}\nend_group\n')
-        self.asset('plugins/Demo_Relinked.gizmo', b'Gizmo {\n label other\n}\nend_group\n')
+        self.asset('plugins/Demo_relinked.gizmo', b'Gizmo {\n label other\n}\nend_group\n')
         with patch('gizmo.default_paths', return_value=[self.root / 'plugins']):
-            target, report, absolute, relative = self.collect('Demo {\n}\nDemo_Relinked {\n}\n')
+            target, report, absolute, relative = self.collect('Demo {\n}\nDemo_relinked {\n}\n')
         paths = [p[key] for p in report['plugins'] for key in ('packed_path', 'absolute_packed_path')]
         self.assertEqual(len(set(paths)), 4)
         self.assertEqual(len(list((target / 'gizmos').glob('*.gizmo'))), 4)
-        self.assertIn('Demo_Relinked_2 {', absolute)
-        self.assertIn('Demo_Relinked {', relative)
+        self.assertIn('demo_relinked_2 {', absolute)
+        self.assertIn('demo_relinked {', relative)
 
 
 if __name__ == '__main__':

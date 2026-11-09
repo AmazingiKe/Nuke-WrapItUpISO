@@ -48,6 +48,7 @@ exe = EXE(
     a.datas,
     [],
     name=release_name,
+    icon=str(project_root / 'assets' / 'Icon' / 'app.ico'),
     version=version_info,
     debug=False,
     bootloader_ignore_signals=False,

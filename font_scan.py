@@ -135,14 +135,14 @@ def collect_fonts(plan, cancel, media_index):
 
 
 def font_destinations(assets):
-    """Flat FONTS folder, retaining names unless distinct source files collide."""
+    """Flat fonts folder with lowercase names and distinct collision suffixes."""
     import hashlib
     fonts = {path for asset in assets if asset.kind == 'font' for path in asset.files}
     result, used, stems = {}, set(), {}
     for path in sorted(fonts):
         family = path.with_suffix('')
         if family not in stems:
-            name = path.stem
+            name = path.stem.lower()
             if name.casefold() in used:
                 suffix = hashlib.sha256(str(family).encode()).hexdigest()[:10]
                 name += '_' + suffix
@@ -150,5 +150,5 @@ def font_destinations(assets):
                 name = '_' + name
             used.add(name.casefold())
             stems[family] = name
-        result[path] = 'FONTS/' + stems[family] + path.suffix
+        result[path] = 'fonts/' + stems[family] + path.suffix.lower()
     return result

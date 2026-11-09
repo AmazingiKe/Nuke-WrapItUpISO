@@ -84,7 +84,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(len(reports), 1)
         self.assertEqual(json.loads(reports[0].read_text(encoding='utf-8'))['copied_files'], 1)
         self.assertEqual(next(reports[0].parent.rglob('plate.exr')).read_bytes(), b'pixels')
-        self.assertFalse((reports[0].parent / 'PACKAGING_INCOMPLETE.txt').exists())
+        self.assertFalse((reports[0].parent / 'packaging_incomplete.txt').exists())
         self.assertIn('打包完成', self.log())
         self.assertNotIn('开始扫描', self.log())
         self.assertNotIn(str(self.folder), self.log())
@@ -352,7 +352,7 @@ class WindowTests(unittest.TestCase):
         report_path = next(self.folder.rglob('report.json'))
         report = json.loads(report_path.read_text(encoding='utf-8'))
         self.assertFalse(report['gizmo_dependencies_complete'])
-        self.assertTrue((report_path.parent / 'gizmos/Demo.gizmo').exists())
+        self.assertTrue((report_path.parent / 'gizmos/demo.gizmo').exists())
         self.assertIn('跳过缺失插件 1 项', self.log())
 
     def test_failed_scan_shows_error_for_selected_project(self):
@@ -522,12 +522,12 @@ class WindowTests(unittest.TestCase):
             self.window.pack(); self.wait_finished()
             self.assertEqual(scan.call_count, 1)
         target = self.window.packaged_paths[self.source]
-        self.assertTrue((target / 'README.md').is_file())
+        self.assertTrue((target / 'readme.md').is_file())
         with patch('app.os.startfile') as opened:
             self.window.open_result()
             opened.assert_called_with(str(target))
             self.window.open_result(readme=True)
-            opened.assert_called_with(str(target / 'README.md'))
+            opened.assert_called_with(str(target / 'readme.md'))
 
     def test_filter_copy_and_remove_selected_projects(self):
         self.source.write_text('Read {\n file missing.exr\n}\nRead {\n file plate.exr\n}\n')
@@ -618,7 +618,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(self.window.packaged_paths[self.source], target)
         with patch('app.os.startfile') as opened:
             self.window.open_result(readme=True)
-            opened.assert_called_with(str(target/'README.md'))
+            opened.assert_called_with(str(target/'readme.md'))
         self.window.clear()
         self.assertFalse(self.window.packaged_paths)
         self.assertTrue(self.window.open_readme_button.instate(['disabled']))

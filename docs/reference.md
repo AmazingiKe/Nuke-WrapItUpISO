@@ -6,7 +6,7 @@
 
 ## Windows 启动
 
-1. 双击 `tools/dist/WrapItUpISO 1.1.28.exe`。这是单文件发布版，已内置 Python 运行时、Tcl/Tk 和拖放依赖，目标电脑无需安装 Python 或 Python Launcher。
+1. 双击 `tools/dist/WrapItUpISO 1.1.29.exe`。这是单文件发布版，已内置 Python 运行时、Tcl/Tk 和拖放依赖，目标电脑无需安装 Python 或 Python Launcher。
 2. 点击左侧工程列表上方的 `+`，打开 Windows 原生文件选择器。支持 Ctrl / Shift 多选文件夹、`.nk` 工程，也可混选，点击“添加选中项”加入列表。双击文件夹进入目录；仅选择 `.nk` 时也可点击“打开”。文件夹会递归查找 `.nk`，没有工程时在日志提示，重复工程不会重复添加。仍支持直接拖入文件或文件夹。
 3. 点击工具栏的放大镜图标“扫描素材与插件”。左侧选择工程，右侧分别列出素材和 Gizmo / 插件条目，点击条目查看来源与问题。左右分栏宽度可拖动调整。
 4. 将一个文件夹拖到“输出目录”输入框，自动使用该路径；也可点击 `...` 选择目录。点击三角形图标“开始打包”。拖到其他区域的文件夹仍用于添加工程。
@@ -17,7 +17,7 @@
 
 重新扫描、取消或再次打包失败时，仍可打开该工程上一次成功打包的目录和 README；下一次成功打包后入口更新到新目录。移除工程或清空列表时清除对应记录。
 
-分发时只需复制 `WrapItUpISO 1.1.28.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
+分发时只需复制 `WrapItUpISO 1.1.29.exe`。程序启动时会将内置依赖解压到系统临时目录，启动可能需要几秒钟。
 
 扫描和复制在后台线程执行，窗口保持可操作。连续双色进度条中，深色代表已处理工程，浅色紧接深色，代表当前工程在当前阶段的任务进度；不绘制工程分隔线，进度变化采用短暂平滑过渡。上方保留工程数量，下方显示任务数、百分比和正在处理的文件；复制阶段按文件数计任务，大文件内部仍按复制量平滑更新。任务数量尚未确定时，浅色部分贴着深色边缘缓慢伸缩。点击“取消”会清理当前未完成工程，保留已完成结果。
 
@@ -41,7 +41,7 @@
 - RSMB 等具有 `OFX` 厂商标识的节点统一标记为“外部依赖”：不查找或复制对应插件文件，不阻止工程或父 Gizmo 打包，接收方自行安装兼容版本并配置授权。界面不计为缺失插件，交付 README 标记“不打包（接收方安装）”，报告保留名称与引用位置；不会宣称插件依赖完整。非 OFX 的 `.dll` / `.so` / `.dylib` 也作为外部依赖处理，不复制且不阻止打包。最高优先级目录同时包含 Gizmo 与二进制候选时保留外部依赖并提示核对；较低优先级的二进制候选不会阻止收集较高优先级 Gizmo。
 - 缺失 Gizmo 保留原引用并跳过收集，日志显示缺失数量，报告标记“未收集”和 `gizmo_dependencies_complete: false`。父 Gizmo 已找到但子 Gizmo 缺失时，仍收集父文件。循环依赖、定义不完整、内部素材缺失 / 缺帧 / 动态路径仍阻止打包并列明原因。二进制插件及其授权和关联库由接收方安装。
 - 所有工程都会检查显式回调、Python/Tcl 按钮和外部脚本加载命令，包括没有 Gizmo 的工程。静态分析可识别仅通过 `nuke.thisNode()` / `thisKnob()` 查询当前节点参数、按条件调用 `setEnabled` / `setVisible` 的界面回调（例如 Glow 的 crop / overscan 联动），保留原代码并允许打包，不会执行回调。默认自动模式不把“无法静态确认脚本依赖”等同于缺失：其余回调和按钮（包括帮助链接、随机种子、内部节点生成，以及可能引用外部模块的代码）原样保留并列为核对项，提示含工程 / Gizmo、节点和按钮名称，不执行代码、不自动收集其动态依赖。报告单列 `script_dependency_warnings`；存在核对项时 `gizmo_dependencies_complete` 为 `false`。`script_dependencies_verified` 始终为 `false`，并注明仅完成静态扫描，不再将“未发现问题”当成脚本运行环境已验证。这只表示文件已收集，不保证脚本在接收方环境中可运行。开发接口 `scan(..., automatic_plugins=False)` 保留严格拦截；直接执行的 `source` / `load` / `load_plugin` / `python` 命令，以及方括号替换或分号后出现的这些命令，仍需解决后才能打包；无法静态确定的 Tcl 控制结构和节点脚本表达式列入核对清单。
-- Gizmo 写入交付包的 `gizmos/`，为绝对路径版和相对路径版生成不同类名的副本，内部素材和字体分别重链接；两份副本共用 `media/` 与 `FONTS/` 中的文件。`report.json` 列出两种类名、来源、原文件哈希、引用关系、输出文件哈希。界面打包前发现工程或 Gizmo 变化会重新扫描；打包过程中来源变化或校验失败会终止当前工程并清理未完成目录。复制完成后重新读取交付文件校验。
+- Gizmo 写入交付包的 `gizmos/`，为绝对路径版和相对路径版生成不同类名的副本，内部素材和字体分别重链接；两份副本共用 `media/` 与 `fonts/` 中的文件。`report.json` 列出两种类名、来源、原文件哈希、引用关系、输出文件哈希。界面打包前发现工程或 Gizmo 变化会重新扫描；打包过程中来源变化或校验失败会终止当前工程并清理未完成目录。复制完成后重新读取交付文件校验。
 
 交付包不生成 `.bat`、`.cmd`、PowerShell 或 Python 启动器，也不自动启动 Nuke。使用接收方正常的 Nuke 环境打开打包后的 `.nk`；OFX、二进制插件和其他未收集依赖需由接收方安装或配置。
 
@@ -69,19 +69,21 @@ python app.py
 
 ```powershell
 python -m pip install -r tools/requirements-build.txt
+python tools/prepare_app_icons.py
 python -m PyInstaller --workpath tools/build --distpath tools/dist tools/WrapItUpISO.spec
 ```
 
-生成的程序为 `tools/dist/WrapItUpISO 1.1.28.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
+生成的程序为 `tools/dist/WrapItUpISO 1.1.29.exe`，文件名自动采用 `version.json` 中的名称与版本，无需附带 `_internal` 文件夹。
+窗口、任务栏和 EXE 使用 `assets/Icon/nuke logo.png` 转换的圆形图标；工具栏使用同目录中的横版 Logo。图标资源随 EXE 内置，替换源图片后运行 `prepare_app_icons.py` 再构建即可更新。
 界面使用 Tkinter，文件拖入使用 `tkinterdnd2` 扩展；不依赖 Qt。
 
 ## 收集规则
 
-- 保留原工程；每个工程生成“工程名 + 路径哈希”文件夹。
+- 保留原工程；每个工程生成“工程名 + 路径哈希”文件夹。交付包内的文件和目录名称统一小写，包括素材、字体、Gizmo、工程文件及 `_relinked`、`_relinked_relative` 后缀；工程中的对应引用同步更新，原工程副本内容保持不变。`<UDIM>` 是 Nuke 的序列标记，保留其语法大小写。
 - 收集 `file`、`proxy`、`vfield_file`、`lut_file`、`cdl_file`、`ocio_config`、`font_file` 中的固定路径。
-- 字体统一写入 `FONTS/`：支持旧版 Text 的 `font` 路径、`font_file`、已识别的字体文件扩展名，以及 Text2 序列化的字体族 / 样式 / 文件名 / 字体索引记录。Text2 的多个字体和默认 Utopia 字体也会检查。PostScript 字体附带存在的 `.afm` / `.pfm` 度量文件，同一源字体只复制一次，不同来源的同名字体使用不同文件名。
+- 字体统一写入 `fonts/`：支持旧版 Text 的 `font` 路径、`font_file`、已识别的字体文件扩展名，以及 Text2 序列化的字体族 / 样式 / 文件名 / 字体索引记录。Text2 的多个字体和默认 Utopia 字体也会检查。PostScript 字体附带存在的 `.afm` / `.pfm` 度量文件，同一源字体只复制一次，不同来源的同名字体使用不同文件名。
 - Text2 字体依次在工程字体目录、已发现的插件字体目录、`NUKE_FONT_PATH`、工程所记录 Nuke 版本的字体目录和系统字体目录中查找；尊重 `free_type_system_fonts`，不会执行工程中的动态字体表达式。缺失或无法解析的字体显示为“缺失 / 待处理”，保留原引用并在 README 中列明。字体查找顺序参考 [Foundry 字体文档](https://learn.foundry.com/nuke/content/comp_environment/effects/fonts_properties.html)。
-- 相对路径版会在 `.nk` 的 Root 后加入固定 Tcl 字体目录设置语句，在 Text2 加载前将本包的 `FONTS` 设为工程字体目录；不会添加外部启动器或安装系统字体。实测 Nuke 15.1v5 的 Text2 字体查找在中文路径下失败，请使用英文交付路径和字体文件名。在 Nuke 中另存时，字体目录会保存为当前绝对路径；另存后再次移动，请重新打包或重新设置字体目录。
+- 相对路径版会在 `.nk` 的 Root 后加入固定 Tcl 字体目录设置语句，在 Text2 加载前将本包的 `fonts` 设为工程字体目录；不会添加外部启动器或安装系统字体。实测 Nuke 15.1v5 的 Text2 字体查找在中文路径下失败，请使用英文交付路径和字体文件名。在 Nuke 中另存时，字体目录会保存为当前绝对路径；另存后再次移动，请重新打包或重新设置字体目录。
 - 支持 `%04d`、`%d`、`####`、`<UDIM>`；复制目录中所有匹配文件，而非只收集时间线范围。
 - 序列填充按 Nuke 的文件名格式匹配：`%04d` 的宽度包含负号，支持 `-001` 和超过四位的 `10000`；同样支持 `%4d` 的空格填充。不会将多补零或错误填充的文件误算为有效帧。
 - 支持 Group 内的显式素材节点、空格及中文路径。
@@ -89,10 +91,10 @@ python -m PyInstaller --workpath tools/build --distpath tools/dist tools/WrapItU
 - 不收集 Write / DeepWrite 的渲染输出；不改变其输出路径。
 - 相对输入路径以固定的 Root `project_directory` 为基准，未设置则以 `.nk` 所在目录为基准。
 - 重写为 `"[file dirname [value root.name]]/media/..."`，移动时请搬走整个打包文件夹。
-- 素材子目录按节点名命名，例如 `media/Read_Plate/`；Group 内使用 `Group1_Read1`，Gizmo 内使用 `PluginName_Read1`。不同节点引用不同素材时分别存放；共享文件或重叠序列统一使用首次引用节点的目录，只复制一次。重名（含大小写差异）追加 `_2`、`_3`，同一节点的不同素材参数也按此规则区分。生成的目录名仅使用英文字母、数字、下划线和连字符，其他字符替换为下划线，空名回退为 `Media`；素材文件名保持原样。
+- 素材子目录按节点名转为小写，例如 `media/read_plate/`；Group 内使用 `group1_read1`，Gizmo 内使用 `pluginname_read1`。不同节点引用不同素材时分别存放；共享文件或重叠序列统一使用首次引用节点的目录，只复制一次。重名（含大小写差异）追加 `_2`、`_3`，同一节点的不同素材参数也按此规则区分。生成的目录名仅使用小写英文字母、数字、下划线和连字符，其他字符替换为下划线，空名回退为 `media`；素材文件名与扩展名也转为小写，节点名称保持原样。
 - 缺失、动态路径保持原值，写入 `report.json`；有这些项时不能视为完整交付。
-- 交付目录生成 `README.md`，逐项列出素材、字体、插件的打包结果（成功 / 部分成功 / 未成功），外部插件标记“不打包（接收方安装）”；详细原因和完整路径保留在 `report.json`。
-- 同时输出三份工程并纳入 SHA-256 校验：`project_original.nk` 保留原工程全部内容、路径、编码和换行，仍依赖原环境；`project_Relinked.nk` 指向打包后素材和字体的绝对位置；`project_Relinked_relative.nk` 使用相对于交付工程的位置，推荐接收方打开。`project` 为原工程名；三份文件放在同一交付目录，共用收集的素材和字体。报告通过 `original_path_script`、`relinked_script` 和 `relative_script` 分别记录文件名。
+- 交付目录生成 `readme.md`，逐项列出素材、字体、插件的打包结果（成功 / 部分成功 / 未成功），外部插件标记“不打包（接收方安装）”；详细原因和完整路径保留在 `report.json`。
+- 同时输出三份工程并纳入 SHA-256 校验：`project_original.nk` 保留原工程全部内容、路径、编码和换行，仍依赖原环境；`project_relinked.nk` 指向打包后素材和字体的绝对位置；`project_relinked_relative.nk` 使用相对于交付工程的位置，推荐接收方打开。`project` 为原工程名；三份文件放在同一交付目录，共用收集的素材和字体。报告通过 `original_path_script`、`relinked_script` 和 `relative_script` 分别记录文件名。
 - 取消或复制失败会清理当前工程的未完成目录，已完成的其他工程保留；如果清理也被拒绝，将明确提示残留路径。
 - 已有同名打包目录时跳过并报错，不覆盖旧结果。
 
@@ -117,7 +119,7 @@ python cli.py "D:/shots/shot01.nk" --output "E:/delivery"
 
 命令行与界面使用相同的自动插件搜索和选择流程，不提供手动指定插件目录或来源的参数。缺失 Gizmo 记入报告并跳过；素材缺失 / 缺帧 / 待处理、阻止打包的插件问题或执行失败返回退出码 1。
 
-打包中存在 `PACKAGING_INCOMPLETE.txt`，仅在复制流程全部结束后删除；素材缺失及插件依赖仍需核对报告。
+打包中存在 `packaging_incomplete.txt`，仅在复制流程全部结束后删除；素材缺失及插件依赖仍需核对报告。
 
 ## 开发与验证
 

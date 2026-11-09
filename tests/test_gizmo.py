@@ -47,9 +47,9 @@ class GizmoTests(unittest.TestCase):
         self.assertEqual(len(plan.assets), 1)
         destination = package(plan, self.root / 'output')
         self.assertEqual(len(list((destination / 'gizmos').glob('*.gizmo'))), 4)
-        self.assertIn('[file dirname [value root.name]]/media/', (destination / 'gizmos/Inner.gizmo').read_text())
+        self.assertIn('[file dirname [value root.name]]/media/', (destination / 'gizmos/inner.gizmo').read_text())
         self.assertEqual(next((destination / 'media').rglob('*.exr')).read_bytes(), b'pixels')
-        self.assertEqual((destination / 'media/Inner_texture/texture.exr').read_bytes(), b'pixels')
+        self.assertEqual((destination / 'media/inner_texture/texture.exr').read_bytes(), b'pixels')
         report = json.loads((destination / 'report.json').read_text(encoding='utf-8'))
         self.assertTrue(report['gizmo_dependencies_complete'])
         self.assertEqual(len(report['plugins']), 2)
@@ -57,7 +57,7 @@ class GizmoTests(unittest.TestCase):
             absolute = (destination / plugin['absolute_packed_path']).read_text()
             self.assertNotIn('[file dirname', absolute)
             self.assertIn(plugin['absolute_packed_class'], (destination / report['relinked_script']).read_text()
-                          + (destination / 'gizmos/Outer_Relinked.gizmo').read_text())
+                          + (destination / 'gizmos/outer_relinked.gizmo').read_text())
         self.assertFalse((destination / '打开工程.cmd').exists())
         self.assertFalse((destination / 'load_package.py').exists())
         for relative, digest in report['file_hashes'].items():
@@ -138,8 +138,8 @@ class GizmoTests(unittest.TestCase):
         plan = self.scan()
         self.assertEqual({a.source for a in plan.assets}, {str(default), str(override)})
         target = package(plan, self.root / 'custom')
-        self.assertIn('/media/', (target / (self.script.stem + '_Relinked_relative.nk')).read_text())
-        self.assertIn('/media/', (target / 'gizmos/Outer.gizmo').read_text())
+        self.assertIn('/media/', (target / (self.script.stem + '_relinked_relative.nk')).read_text())
+        self.assertIn('/media/', (target / 'gizmos/outer.gizmo').read_text())
         self.assertEqual({p.read_bytes() for p in (target / 'media').rglob('*.exr')}, {b'default', b'override'})
         override.unlink()
         with self.assertRaises(RuntimeError):
@@ -335,10 +335,10 @@ class GizmoTests(unittest.TestCase):
         self.gizmo('Outer')
         target = package(self.scan(), self.root / 'delivery')
         report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
-        expected = report['file_hashes']['gizmos/Outer.gizmo']
-        self.assertEqual(hashlib.sha256((target / 'gizmos/Outer.gizmo').read_bytes()).hexdigest(), expected)
-        (target / 'gizmos/Outer.gizmo').write_text('altered')
-        self.assertNotEqual(hashlib.sha256((target / 'gizmos/Outer.gizmo').read_bytes()).hexdigest(), expected)
+        expected = report['file_hashes']['gizmos/outer.gizmo']
+        self.assertEqual(hashlib.sha256((target / 'gizmos/outer.gizmo').read_bytes()).hexdigest(), expected)
+        (target / 'gizmos/outer.gizmo').write_text('altered')
+        self.assertNotEqual(hashlib.sha256((target / 'gizmos/outer.gizmo').read_bytes()).hexdigest(), expected)
         self.assertFalse((target / 'load_package.py').exists())
 
 

@@ -30,8 +30,8 @@ class DependencyAuditTests(unittest.TestCase):
         self.assertEqual(len(plan.assets), 1)
         self.assertEqual(plan.assets[0].node_path, 'Outer_Embedded')
         target = package(plan, self.root / 'output')
-        self.assertEqual((target / 'media/Outer_Embedded/texture.exr').read_bytes(), b'pixels')
-        text = (target / (self.script.stem + '_Relinked_relative.nk')).read_text()
+        self.assertEqual((target / 'media/outer_embedded/texture.exr').read_bytes(), b'pixels')
+        text = (target / (self.script.stem + '_relinked_relative.nk')).read_text()
         self.assertIn('texture "[file dirname [value root.name]]/media/', text)
         self.assertIn('texture plain_text', text)
         media.unlink()
@@ -48,7 +48,7 @@ class DependencyAuditTests(unittest.TestCase):
         plan = scan(self.script, automatic_plugins=True)
         self.assertEqual(len(plan.assets), 1)
         target = package(plan, self.root / 'nested')
-        self.assertIn('/media/', (target / 'gizmos/Demo.gizmo').read_text())
+        self.assertIn('/media/', (target / 'gizmos/demo.gizmo').read_text())
 
     def test_outer_file_declaration_does_not_leak_into_nested_group(self):
         (self.root / 'texture.exr').write_bytes(b'pixels')
@@ -85,7 +85,7 @@ class DependencyAuditTests(unittest.TestCase):
             plan = scan(self.script, automatic_plugins=True)
         self.assertFalse(plan.plugin_blockers)
         target = package(plan, self.root / 'mixed')
-        self.assertTrue((target / 'gizmos/Demo.gizmo').is_file())
+        self.assertTrue((target / 'gizmos/demo.gizmo').is_file())
 
     def test_same_directory_mixed_formats_remain_external_without_blocking(self):
         self.script.write_text('Demo {\n}\n')
@@ -104,7 +104,7 @@ class DependencyAuditTests(unittest.TestCase):
         target = package(scan(self.script), self.root / 'delivery')
         for name in ('打开工程.cmd', 'launch.ps1', 'load_package.py'):
             self.assertFalse((target / name).exists())
-        readme = (target / 'README.md').read_text(encoding='utf-8')
+        readme = (target / 'readme.md').read_text(encoding='utf-8')
         self.assertIn('gizmos', readme)
         self.assertIn('Nuke', readme)
         self.assertNotIn('打开工程.cmd', readme)

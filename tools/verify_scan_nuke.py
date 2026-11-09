@@ -131,7 +131,7 @@ Path({str(reference)!r}).write_text(json.dumps(result))
         probe.write_text(f'''import nuke,json
 from pathlib import Path
 nuke.pluginAddPath({str(moved/'gizmos')!r})
-nuke.scriptOpen({str(moved/(script.stem + '_Relinked_relative.nk'))!r})
+nuke.scriptOpen({str(moved/(script.stem + '_relinked_relative.nk'))!r})
 result={{}}
 for cls,name in (('ReviewChoice','Choice1'),('ReviewArchive','Archive1')):
     node=nuke.toNode(name)

@@ -72,7 +72,7 @@ nuke.pluginAddPath({str(plugins)!r})
 try:
     nuke.scriptOpen({str(path)!r})
 except Exception:
-    print('FONT_DIAGNOSTIC', nuke.root().name(), nuke.root()['free_type_font_path'].value(), list((Path({str(path)!r}).parent / 'FONTS').iterdir()))
+    print('FONT_DIAGNOSTIC', nuke.root().name(), nuke.root()['free_type_font_path'].value(), list((Path({str(path)!r}).parent / 'fonts').iterdir()))
     raise
 result = {{}}
 for name in ('Modern', 'Legacy', 'Nested'):
@@ -116,7 +116,7 @@ Path({str(destination / 'result.json')!r}).write_text(json.dumps(result))
         return {'rendered_nodes': list(before), 'absolute_matches_source': True,
                 'relocated_relative_matches_source': True, 'original_bytes_preserved': True,
                 'text2_unicode_font_directory_supported': unicode_supported,
-                'font_files': [p.name for p in (unicode_target / 'FONTS').iterdir()]}
+                'font_files': [p.name for p in (unicode_target / 'fonts').iterdir()]}
 
 
 if __name__ == '__main__':

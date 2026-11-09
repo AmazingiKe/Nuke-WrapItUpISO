@@ -40,7 +40,7 @@ def render_package_readme(report):
                          f'{asset_result(asset)} | {asset.get("files", 0) if asset.get("packed_path") else 0} |')
     else:
         lines.append('无素材。')
-    lines += ['', '## 字体（FONTS）', '']
+    lines += ['', '## 字体（fonts）', '']
     if fonts:
         lines += ['| 节点 | 字体 | 打包状态 |', '| --- | --- | --- |']
         for asset in fonts:
@@ -67,7 +67,7 @@ def render_package_readme(report):
         lines += [f'推荐交付：{cell(report["relative_script"])}。素材与字体使用相对路径，移动整个文件夹后仍可读取。', '',
                   f'固定位置使用：{cell(report["relinked_script"])}。素材与字体使用打包位置的绝对路径，移动后需改用 relative 版或重新打包。', '',
                   '两份工程仅重链接成功收集的文件；未收集项保留原引用，请核对表格和报告。',
-                  'Text2 的字体文件在 FONTS 中，通过工程字体搜索目录加载；无需安装到系统。']
+                  'Text2 的字体文件在 fonts 中，通过工程字体搜索目录加载；无需安装到系统。']
     else:
         lines.append(f'使用已配置好插件环境的 Nuke 打开 {script}。')
     if report.get('original_path_script'):

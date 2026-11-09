@@ -12,7 +12,7 @@ from tkinter.scrolledtext import ScrolledText
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from core import Cancelled, DependencyError, package, scan
 from gizmo import Plugin
-from app_version import APP_LABEL, APP_TAGLINE
+from app_version import APP_LABEL, APP_NAME, APP_TAGLINE
 from project_picker import ask_projects
 from project_discovery import DiscoveryWorker
 from scan_cache import ScanSession
@@ -316,8 +316,18 @@ class Worker(threading.Thread):
 
 class Window(TkinterDnD.Tk):
     def __init__(self):
+        if os.name == 'nt':
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
         super().__init__()
         self.title(f'{APP_LABEL} · {APP_TAGLINE}')
+        icon_folder = Path(__file__).parent / 'assets' / 'Icon'
+        if os.name == 'nt':
+            self.iconbitmap(str(icon_folder / 'app.ico'))
+            self.iconbitmap(default=str(icon_folder / 'app.ico'))
+        else:
+            self.window_icon = tk.PhotoImage(master=self, file=str(icon_folder / 'nuke logo.png'))
+            self.iconphoto(True, self.window_icon)
         self.geometry('1160x880')
         self.minsize(780, 640)
         self.paths = []
@@ -408,6 +418,13 @@ class Window(TkinterDnD.Tk):
         self.tooltips.append(ToolTip(self.cancel, '取消当前任务'))
         ttk.Checkbutton(self.toolbar, text='只看 ×', variable=self.only_issues,
                         command=self.render_selected_project).pack(side='right', padx=12)
+        logo_path = Path(__file__).parent / 'assets' / 'Icon' / ('wordmark_2x.png' if scale > 1 else 'wordmark.png')
+        self.brand_logo = tk.PhotoImage(master=self, file=str(logo_path))
+        logo_height = round(24 * scale)
+        if self.brand_logo.height() != logo_height:
+            divisor = math.gcd(logo_height, self.brand_logo.height())
+            self.brand_logo = self.brand_logo.zoom(logo_height // divisor).subsample(self.brand_logo.height() // divisor)
+        ttk.Label(self.toolbar, image=self.brand_logo).pack(side='right', padx=(12, 8))
         self.panes = ttk.Panedwindow(root, orient='horizontal')
         self.panes.pack(fill='both', expand=True)
         projects = ttk.Frame(self.panes, width=330, padding=(0, 0, 10, 0))
@@ -663,7 +680,7 @@ class Window(TkinterDnD.Tk):
     def open_result(self, readme=False):
         target = self.result_path()
         if target:
-            try: os.startfile(str(target / 'README.md' if readme else target))
+            try: os.startfile(str(target / 'readme.md' if readme else target))
             except OSError as error: self.append_log(f'打开失败 · {readable_error(error)}', 'error')
 
     def scan_only(self):

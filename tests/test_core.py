@@ -22,11 +22,11 @@ class PackagingTests(unittest.TestCase):
                 original_name = self.script.stem + '_original.nk'
                 self.assertEqual((target / original_name).read_bytes(), original)
                 self.assertEqual(self.script.read_bytes(), original)
-                self.assertIn('/media/', (target / (self.script.stem + '_Relinked_relative.nk')).read_bytes().decode(encoding))
+                self.assertIn('/media/', (target / (self.script.stem + '_relinked_relative.nk')).read_bytes().decode(encoding))
                 report = json.loads((target / 'report.json').read_text(encoding='utf-8'))
                 self.assertEqual(report['original_path_script'], original_name)
                 self.assertEqual(report['file_hashes'][original_name], hashlib.sha256(original).hexdigest())
-                readme = (target / 'README.md').read_text(encoding='utf-8')
+                readme = (target / 'readme.md').read_text(encoding='utf-8')
                 self.assertIn(original_name, readme)
                 self.assertIn('原始路径', readme)
 
@@ -106,12 +106,12 @@ Write {
         target=package(plan,self.root/'packed')
         collected=list((target/'media').rglob('*.exr')); self.assertEqual(len(collected),3)
         self.assertEqual(sorted(p.read_bytes() for p in collected),sorted([bytes([1])*20,bytes([3])*20,b'different']))
-        text=(target/(self.script.stem + '_Relinked_relative.nk')).read_text(encoding='utf-8-sig')
+        text=(target/(self.script.stem + '_relinked_relative.nk')).read_text(encoding='utf-8-sig')
         self.assertIn('file render/output.%04d.exr',text); self.assertIn('fake { Read { file NOT_A_FILE } }',text)
         self.assertIn('[file dirname [value root.name]]/media/',text)
         self.assertIn('file missing.exr',text); self.assertIn('[value root.foo]/dynamic.exr',text)
         report=json.loads((target/'report.json').read_text(encoding='utf-8')); self.assertEqual(report['copied_files'],3)
-        readme=(target/'README.md').read_text(encoding='utf-8')
+        readme=(target/'readme.md').read_text(encoding='utf-8')
         self.assertIn('部分成功',readme)
         self.assertIn('未成功',readme)
         self.assertIn('report.json',readme)
@@ -138,7 +138,7 @@ Write {
         plan = scan(self.script)
         self.assertEqual(plan.encoding, 'gb18030')
         target = package(plan, self.root / 'legacy')
-        self.assertIn('中文节点', (target / (self.script.stem + '_Relinked_relative.nk')).read_bytes().decode('gb18030'))
+        self.assertIn('中文节点', (target / (self.script.stem + '_relinked_relative.nk')).read_bytes().decode('gb18030'))
         self.script.write_bytes(b'\xff')
         with self.assertRaisesRegex(ValueError, '无法解码'):
             scan(self.script)
@@ -157,7 +157,7 @@ Write {
         with patch.object(Path,'rename',side_effect=PermissionError('[WinError 5] Access is denied')):
             target=package(plan,self.root/'packed')
         self.assertTrue((target/'report.json').is_file())
-        self.assertFalse((target/'PACKAGING_INCOMPLETE.txt').exists())
+        self.assertFalse((target/'packaging_incomplete.txt').exists())
     def test_command_blocks_and_builtin_warning_noise(self):
         names='Retime Colorspace Input Remove Keyer Expression ShuffleCopy Output Cryptomatte Multiply Keymix HueCorrect Copy Denoise2 Defocus AddChannels Invert Grain2 ColorLookup NoTimeBlur AdjBBox CopyBBox STMap TimeBlur'.split()
         self.script.write_text('define_window_layout_xml {\n <layout>fake</layout>\n}\nadd_layer {rgba red green blue alpha}\n' + ''.join(f'{cls} {{\n name {cls}1\n}}\n' for cls in names) + 'MyCustom {\n name one\n}\nMyCustom {\n name two\n}\n')
@@ -204,7 +204,7 @@ Write {
         remaining = list((self.root / 'locked').iterdir())
         self.assertEqual(len(remaining), 1)
         self.assertIn(str(remaining[0]), str(error.exception))
-        self.assertTrue((remaining[0] / 'PACKAGING_INCOMPLETE.txt').is_file())
+        self.assertTrue((remaining[0] / 'packaging_incomplete.txt').is_file())
         self.assertFalse((remaining[0] / 'report.json').exists())
 
     def test_readonly_cleanup_retries_removal_without_touching_source(self):
@@ -212,7 +212,7 @@ Write {
         original_rmtree = shutil.rmtree
         plan = scan(self.script)
         def readonly_cleanup(stage, onerror):
-            marker = stage / 'PACKAGING_INCOMPLETE.txt'
+            marker = stage / 'packaging_incomplete.txt'
             marker.chmod(stat.S_IREAD)
             onerror(os.unlink, str(marker), (PermissionError, PermissionError('readonly'), None))
             self.assertFalse(marker.exists())

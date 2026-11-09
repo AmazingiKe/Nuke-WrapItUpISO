@@ -53,7 +53,7 @@ def verify(nuke, gui=False):
 from pathlib import Path
 root = Path({str(moved)!r})
 nuke.pluginAddPath(str(root / 'gizmos'))
-nuke.scriptOpen(str(root / 'test_Relinked_relative.nk'))
+nuke.scriptOpen(str(root / 'test_relinked_relative.nk'))
 ''' + '''
 node = nuke.toNode('Outer1')
 result = {'gui': nuke.env['gui'], 'class': node.Class(),
@@ -77,7 +77,7 @@ if nuke.env['gui']:
         if result.returncode:
             raise RuntimeError(f'Nuke exit {result.returncode}: {output}')
         data = json.loads((moved / 'validation_result.json').read_text())
-        assert data['class'] == 'Outer', data
+        assert data['class'] == 'outer', data
         assert data['gui'] == gui, data
         assert abs(data['red'] - 1) < 0.0001 and abs(data['green']) < 0.0001, data
         assert Path(data['file']).is_relative_to(moved), data
